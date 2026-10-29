@@ -1032,7 +1032,8 @@ export async function deschidFataFirma(p: string | undefined, id: string, cheie:
     const cert = acum !== undefined ? acum ?? undefined : typeof j.cert === "string" ? j.cert : undefined;
     const firma = await verificCertificat(cert, undefined, chei, azi);
     if (!firma || !(await verificSemnatura(firma.cheie, textFata(id, x.j), x.s))) return undefined;
-    return { firma, ...(typeof j.c === "string" && j.c ? { catre: j.c.slice(0, 80) } : {}), ...(typeof j.n === "string" && j.n ? { nota: j.n.slice(0, 160) } : {}) };
+    // Without control or direction characters, as every other name shown (attack test 2026-10-29, L3).
+    return { firma, ...(typeof j.c === "string" && curat(j.c).trim() ? { catre: curat(j.c).slice(0, 80) } : {}), ...(typeof j.n === "string" && curat(j.n).trim() ? { nota: curat(j.n).slice(0, 160) } : {}) };
   } catch {
     return undefined;
   }

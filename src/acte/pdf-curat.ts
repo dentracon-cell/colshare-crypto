@@ -5,8 +5,12 @@
 // files, its form, and every annotation (links and widgets are where actions sit). Pages, pictures and text stay.
 import { PDFDocument, PDFName } from "pdf-lib";
 
-/** What in a PDF's bytes can act, or hide where a plain read of the bytes doesn't see it (object streams, names in hex). */
-const ACTIVE = /\/(JavaScript|JS|OpenAction|AA|Launch|EmbeddedFiles?|RichMedia|XFA|SubmitForm|ImportData|GoToR|GoToE|ObjStm|AcroForm|Annots)\b|\/[A-Za-z]*#[0-9A-Fa-f]{2}/;
+/**
+ * What in a PDF's bytes can act, or hide where a plain read of the bytes doesn't see it (object streams, names in hex).
+ * Bookmarks and named destinations too: a bookmark can open a web address, and one whose only action was that passed
+ * through untouched (attack test 2026-10-29, L2). The rebuild leaves them all behind.
+ */
+const ACTIVE = /\/(JavaScript|JS|OpenAction|AA|Launch|EmbeddedFiles?|RichMedia|XFA|SubmitForm|ImportData|GoToR|GoToE|ObjStm|AcroForm|Annots|URI|Outlines|Dests|Names)\b|\/[A-Za-z]*#[0-9A-Fa-f]{2}/;
 
 /** A PDF that pdf-lib can't read and nothing could draw: it is not handed out as it came (second round, C2). */
 export class PdfNecitit extends Error {}

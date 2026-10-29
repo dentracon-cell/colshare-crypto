@@ -56,17 +56,20 @@ export function citescLinkul(adresa: string, domeniu: string): LinkBirou | undef
   return s.startsWith(baza) && new RegExp(`^${ID}$`).test(token) ? { fel: "preiau", token } : undefined;
 }
 
-/** A computer's open slot: the code it shows, and the key only it holds (in memory, never stored). */
-export interface Legatura { id: string; adresa: string; privata: CryptoKey; publica: Uint8Array }
+/**
+ * A computer's open slot: the code it shows, and the key and the secret only it holds (in memory, never stored, never
+ * in the QR): without the secret nobody else can take what the phone leaves (attack test 2026-10-29, L5).
+ */
+export interface Legatura { id: string; adresa: string; privata: CryptoKey; publica: Uint8Array; s: string }
 
 /** The new computer opens a slot and makes its one-time key; `adresa` goes in the QR. */
 export async function deschidLegatura(apel: ApelFirma, domeniu: string): Promise<Legatura> {
   // Not extractable: the private half can't be read out of this page, only used to open what the phone seals.
   const k = await crypto.subtle.generateKey(EC, false, ["deriveBits"]) as CryptoKeyPair;
   const publica = new Uint8Array(await crypto.subtle.exportKey("raw", k.publicKey));
-  const { id } = await apel<{ id: string }>("legatura-deschid", {});
-  if (!new RegExp(`^${ID}$`).test(id)) throw new EroareFirma(502);
-  return { id, adresa: `${domeniu}/birou/#leg=${id}.${b64url(publica)}`, privata: k.privateKey, publica };
+  const { id, s } = await apel<{ id: string; s: string }>("legatura-deschid", {});
+  if (!new RegExp(`^${ID}$`).test(id) || typeof s !== "string" || !/^[A-Za-z0-9_-]{16,64}$/.test(s)) throw new EroareFirma(502);
+  return { id, adresa: `${domeniu}/birou/#leg=${id}.${b64url(publica)}`, privata: k.privateKey, publica, s };
 }
 
 /** The phone leaves `inv` (an invitation for this person's own other device) in the computer's slot, sealed to its key. */
@@ -78,7 +81,7 @@ export async function punLegatura(apel: ApelFirma, loc: Parameters<ApelFirma>[2]
 
 /** The computer looks at its slot: the invitation once the phone left it, else undefined. */
 export async function iauLegatura(apel: ApelFirma, l: Legatura): Promise<string | undefined> {
-  const { d } = await apel<{ d?: string }>("legatura-iau", { id: l.id });
+  const { d } = await apel<{ d?: string }>("legatura-iau", { id: l.id, s: l.s });
   if (d === undefined) return undefined;
   const b = typeof d === "string" ? await deschideCuLacat(l.privata, l.publica, dinB64url(d), INFO) : undefined;
   let x: { id?: unknown; inv?: unknown } | undefined;

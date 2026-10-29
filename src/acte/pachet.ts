@@ -2,7 +2,7 @@
 // The format: "ACT1", the header's length (4 bytes, big-endian), the header as JSON, then the files one after the other.
 // The send's encryption (AES-256-GCM under a key only in the link) and the ask's (sealed to the asker's public key,
 // core/teren/lacat.ts) are in ./link.ts.
-import { curatNota } from "./link.ts";
+import { curat, curatNota } from "./link.ts";
 
 const MAGIC = new TextEncoder().encode("ACT1");
 /** The most files in one package, and the longest name. */
@@ -47,10 +47,13 @@ interface Antet {
   fisiere: { nume: string; tip: string; octeti: number }[];
 }
 
-/** A file name safe to offer for saving: no folders, no control characters, an extension that matches its type. */
+/**
+ * A file name safe to offer for saving: no folders, no control or direction characters (a name can't read backwards to
+ * pass for another, attack test 2026-10-29, L3), an extension that matches its type.
+ */
 export function numeSigur(nume: string, tip: string): string {
   // eslint-disable-next-line no-control-regex
-  let n = nume.replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_NUME) || "act";
+  let n = curat(nume).replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_NUME) || "act";
   const ext = tip === "application/pdf" ? ".pdf" : tip === "image/png" ? ".png" : tip === "image/webp" ? ".webp" : ".jpg";
   if (!n.toLowerCase().endsWith(ext)) n += ext;
   return n;
@@ -94,7 +97,8 @@ export function despacheteaza(b: Uint8Array): Pachet {
   const fm = antet.f && typeof antet.f.c === "string" && typeof antet.f.s === "string" && antet.f.c.length < 2000 && antet.f.s.length < 200 ? { firma: { c: antet.f.c, s: antet.f.s } } : {};
   const c = antet.c;
   const cm = c && [c.p, c.client, c.titlu, c.rand, c.s].every((x) => typeof x === "string") && c.client.length <= 120 && c.titlu.length <= 200 && c.p.length < 64 && c.rand.length < 64 && c.s.length < 200
-    ? { coleg: { p: c.p, client: c.client, titlu: c.titlu, rand: c.rand, s: c.s } } : {};
+    ? { coleg: { p: c.p, client: curat(c.client), titlu: curat(c.titlu), rand: c.rand, s: c.s } } : {};
   const nota = typeof antet.o === "string" ? curatNota(antet.o) : "";
-  return { ...(typeof antet.titlu === "string" ? { titlu: antet.titlu } : {}), ...(typeof antet.de === "string" ? { de: antet.de } : {}), ...(nota ? { nota } : {}), ...fm, ...cm, fisiere };
+  // The title and the sender's name without control or direction characters, as the link's front (./link.ts curat).
+  return { ...(typeof antet.titlu === "string" ? { titlu: curat(antet.titlu) } : {}), ...(typeof antet.de === "string" ? { de: curat(antet.de) } : {}), ...(nota ? { nota } : {}), ...fm, ...cm, fisiere };
 }
