@@ -1138,7 +1138,6 @@ export interface Preluare {
   casuta: string;
   cheie: string;
   recuperare: string;
-  persoane: { id: string; nume: string }[];
 }
 export const preluareInfo = (apel: ApelFirma, token: string) => apel<Preluare>("preluare-info", { token });
 

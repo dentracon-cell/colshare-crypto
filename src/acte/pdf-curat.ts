@@ -26,9 +26,13 @@ export interface PozaPagina { jpeg: Uint8Array; w: number; h: number }
  * `poze` when given; without it, or when that fails too, PdfNecitit is thrown.
  */
 export async function curatPdf(b: Uint8Array, poze?: (b: Uint8Array) => Promise<PozaPagina[]>): Promise<Uint8Array> {
-  if (!ACTIVE.test(new TextDecoder("latin1").decode(b))) return b;
+  const text = new TextDecoder("latin1").decode(b);
+  if (!ACTIVE.test(text)) return b;
   let curat: Uint8Array;
   try {
+    // Past MAX_PAGINI the rebuild is not tried: it ran on the desk's main thread for 45 s on 20,000 empty pages
+    // (attack test 2026-10-29, H2). Counted in the bytes first, then by pdf-lib for pages kept in object streams.
+    if ((text.match(/\/Type\s*\/Page(?![a-zA-Z])/g)?.length ?? 0) > MAX_PAGINI) throw new PdfNecitit("Too many pages.");
     curat = await refac(b);
   } catch {
     // pdf-lib reads some broken files without a word and fails only on their pages: either way, pictures or nothing.
@@ -37,8 +41,12 @@ export async function curatPdf(b: Uint8Array, poze?: (b: Uint8Array) => Promise<
   return curat;
 }
 
+/** The most pages a PDF that must be rebuilt may have; one with more is drawn as pictures of its first pages, or refused. */
+export const MAX_PAGINI = 300;
+
 async function refac(b: Uint8Array): Promise<Uint8Array> {
   const sursa = await PDFDocument.load(b, { ignoreEncryption: true, updateMetadata: false });
+  if (sursa.getPageCount() > MAX_PAGINI) throw new PdfNecitit("Too many pages.");
   const doc = await PDFDocument.create({ updateMetadata: false });
   // Taken off the pages before they are copied, so nothing they pointed at is copied into the new file.
   for (const p of sursa.getPages()) for (const k of ["Annots", "AA"]) p.node.delete(PDFName.of(k));
