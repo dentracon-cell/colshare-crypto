@@ -87,6 +87,12 @@ export interface CheieFirma {
   g: number;
   privata: string;
   publica: string;
+  /**
+   * This generation's public key signed by the generation before it (textGeneratie): a device takes a new generation
+   * only when it chains to one it holds, so whoever can write the server's store can't hand it a ring of their own
+   * (attack test 2026-10-29, C1). None on the first generation, and on those made before the chain.
+   */
+  lant?: string;
 }
 
 /** The firm's key ring: every generation still useful, the newest last. */
@@ -109,10 +115,14 @@ export async function locNou(): Promise<Loc> {
   return { id: await idLoc(p.publica), privata: b64url(p.privata), publica: b64url(p.publica) };
 }
 
-/** A new generation of the firm's key. */
-export async function cheieFirmaNoua(g: number): Promise<CheieFirma> {
+/** What a generation's predecessor signs: its number and public key. */
+export const textGeneratie = (g: number, publica: string) => `colshare-generatie-v1\n${g}\n${publica}`;
+
+/** A new generation of the firm's key; after `inainte`, chained to it (C1). */
+export async function cheieFirmaNoua(g: number, inainte?: CheieFirma): Promise<CheieFirma> {
   const p = await perecheLacat();
-  return { g, privata: b64url(p.privata), publica: b64url(p.publica) };
+  const publica = b64url(p.publica);
+  return { g, privata: b64url(p.privata), publica, ...(inainte ? { lant: await semnez(inainte.privata, textGeneratie(g, publica)) } : {}) };
 }
 
 /** An answer from /api/firme with an error: its status and code (the desk says it in its language). */
@@ -181,7 +191,8 @@ export interface StareFirma {
   /** Days every device of the firm keeps papers, once a device brought its own or a person chose in Settings. */
   pastrare?: number;
   certificat?: string | null;
-  inel?: { g: number; d: string };
+  /** `s`: the approving device's signature over what it sealed to this one (deschidInelNou). */
+  inel?: { g: number; d: string; s?: string };
 }
 
 // ------------------------------------------------------------------ the key ring between seats
@@ -199,6 +210,16 @@ export async function deschidInel(loc: Loc, d: string): Promise<Inel | undefined
   } catch {
     return undefined;
   }
+}
+
+/**
+ * A new device's first ring, opened only when the device that approved it signed what it sealed (textInelNou) with
+ * `de`, its key, the one the safety code was made from (attack test 2026-10-29, C1); `pinel`, the person key sealed
+ * with it. Undefined for a ring the server sealed on its own.
+ */
+export async function deschidInelNou(loc: Loc, de: string, x: { d: string; s?: string }, pinel?: string): Promise<Inel | undefined> {
+  if (typeof x.s !== "string" || !(await verificSemnatura(dinB64url(de), textInelNou(loc.id, x.d, pinel), x.s))) return undefined;
+  return deschidInel(loc, x.d);
 }
 
 // ------------------------------------------------------------------ people and the recovery key
@@ -304,13 +325,40 @@ export async function deschidPentruRecuperare(r: CheieRecuperare, m: string): Pr
 export const punRecuperarea = async (apel: ApelFirma, loc: Loc, inel: Inel, publica: string, inlocuiesc = false) =>
   apel("recuperare-pune", { cheie: publica, semn: await semnezRecuperarea(inel, publica), ...(inlocuiesc ? { inlocuiesc: true } : {}) }, loc);
 
-/** Two rings as one: every generation once, in order. */
+/** Two rings as one: every generation once, in order. For rings this device made or the firm's recovery file holds. */
 export const unescInele = (a: Inel, b: Inel): Inel => ({ chei: [...new Map([...a.chei, ...b.chei].map((k) => [k.g, k])).values()].sort((x, y) => x.g - y.g) });
+
+/**
+ * A ring the server handed this device, taken into the one it holds (attack test 2026-10-29, C1). A generation it holds
+ * is never replaced, and a newer one is taken only when it chains to the one before it (`lant`, signed with that
+ * generation's key, which only the firm's devices hold). Anything else the server put in is left out.
+ */
+export async function primescInel(eu: Inel, venit: Inel): Promise<Inel> {
+  const are = new Map(eu.chei.map((k) => [k.g, k]));
+  for (const k of [...venit.chei].sort((x, y) => x.g - y.g)) {
+    if (are.has(k.g)) continue;
+    const inainte = are.get(k.g - 1);
+    if (!inainte || typeof k.lant !== "string" || !(await verificSemnatura(dinB64url(inainte.publica), textGeneratie(k.g, k.publica), k.lant))) continue;
+    are.set(k.g, k);
+  }
+  return { chei: [...are.values()].sort((x, y) => x.g - y.g) };
+}
+
+/**
+ * What the device that approves a new one signs over what it seals to it (the ring, and the person's key for their own
+ * second device): the new device checks it with the key the safety code confirmed, so a ring the server sealed on its
+ * own isn't taken (C1).
+ */
+export const textInelNou = (loc: string, d: string, pinel = "") => `colshare-inel-nou-v1\n${loc}\n${d}\n${pinel}`;
+/** What a device answering an invitation signs: the invitation, its seat, and the person key it brings (P1). */
+export const textIntrare = (inv: string, loc: string, persoana = "") => (persoana ? `colshare-intra-v1\n${inv}\n${loc}\n${persoana}` : `colshare-intra-v1\n${inv}\n${loc}`);
 export const cheiaCurenta = (i: Inel) => i.chei[i.chei.length - 1];
 
 // ------------------------------------------------------------------ activation, seats, generations
 
 const textActivare = (cheie: string, loc: string, firma: string) => `colshare-activare-v1\n${cheie}\n${loc}\n${firma}`;
+/** What the recovery file's own key signs to add a seat to an active licence (attack test 2026-10-29, H3). */
+const textActivareRecuperare = (cheie: string, loc: string) => `colshare-activare-recuperare-v1\n${cheie}\n${loc}`;
 /** What the recovery file's own key signs to take a person back (security audit 2026-10-25, second round, S1). */
 const textReia = (cheie: string, loc: string, persoana: string) => `colshare-reia-v1\n${cheie}\n${loc}\n${persoana}`;
 
@@ -320,7 +368,7 @@ const textReia = (cheie: string, loc: string, persoana: string) => `colshare-rei
  * `o.persoana`: the person this device starts (their key made here, and their name); `o.recuperare`: the firm's
  * recovery public key, on the first activation.
  */
-export async function activez(apel: ApelFirma, cheie: string, nume: string, inel?: Inel, o: { persoana?: { cheie: Persoana; nume: string }; recuperare?: string; reia?: { id: string; recuperare: CheieRecuperare } } = {}): Promise<{ loc: Loc; inel: Inel; stare: StareFirma }> {
+export async function activez(apel: ApelFirma, cheie: string, nume: string, inel?: Inel, o: { persoana?: { cheie: Persoana; nume: string }; recuperare?: string; reia?: { id: string; recuperare: CheieRecuperare }; fisier?: CheieRecuperare } = {}): Promise<{ loc: Loc; inel: Inel; stare: StareFirma }> {
   const loc = await locNou();
   const firma = inel ? cheiaCurenta(inel) : await cheieFirmaNoua(1);
   const k = cheie.trim().toUpperCase();
@@ -331,6 +379,8 @@ export async function activez(apel: ApelFirma, cheie: string, nume: string, inel
     ...(o.persoana ? { persoana: { cheie: o.persoana.cheie.publica, nume: o.persoana.nume } } : {}), ...(o.recuperare ? { recuperare: o.recuperare } : {}),
     // Taking a person back needs the recovery file itself: its key signs, and no seat's ring holds it.
     ...(inel && o.reia ? { reia: o.reia.id, sigRecuperare: await semnez(o.reia.recuperare.privata, textReia(k, loc.id, o.reia.id)) } : {}),
+    // A seat added to an active licence from the file: its recovery key signs too (H3).
+    ...(inel && !o.reia && o.fisier ? { sigRecuperare: await semnez(o.fisier.privata, textActivareRecuperare(k, loc.id)) } : {}),
     // This seat and its person vouched for by the firm's key, as every device checks them (verificDirector).
     semnLoc: await semnezLoc({ chei: [firma] }, { id: loc.id, cheie: loc.publica, p: o.persoana?.cheie.id }),
     ...(o.persoana ? { semnPersoana: await semnezPersoana({ chei: [firma] }, { id: o.persoana.cheie.id, cheie: o.persoana.cheie.publica }) } : {}),
@@ -353,6 +403,8 @@ export type IntrareJurnal =
 
 const textJurnal = (j: string) => `colshare-jurnal-v1
 ${j}`;
+/** Entries written since 2026-10-29 also sign the device that wrote them (attack test 2026-10-29, L10). */
+const textJurnal2 = (loc: string, j: string) => `colshare-jurnal-v2\n${loc}\n${j}`;
 
 /**
  * An entry written to the person's journal, signed with their key and sealed to it (the server keeps it for their
@@ -361,7 +413,7 @@ ${j}`;
  */
 export async function scriuInJurnal(apel: ApelFirma, loc: Loc, eu: Persoana, x: IntrareJurnal): Promise<string> {
   const j = JSON.stringify(x);
-  const e = b64url(await sigileazaPentruLacat(dinB64url(eu.publica), enc(JSON.stringify({ j, s: await semnez(eu.privata, textJurnal(j)) })), INFO_JURNAL));
+  const e = b64url(await sigileazaPentruLacat(dinB64url(eu.publica), enc(JSON.stringify({ v: 2, j, s: await semnez(eu.privata, textJurnal2(loc.id, j)) })), INFO_JURNAL));
   return (await apel<{ id: string }>("jurnal-pune", { e }, loc)).id;
 }
 
@@ -381,9 +433,13 @@ export async function citescJurnalul(apel: ApelFirma, loc: Loc, eu: Persoana, du
     if (!b || !cu) continue;
     try {
       // Signed by the key it was sealed to: an entry anyone could seal, unsigned, is not done.
-      const w = JSON.parse(new TextDecoder().decode(b)) as { j?: unknown; s?: unknown };
-      if (typeof w.j !== "string" || typeof w.s !== "string" || !(await verificSemnatura(dinB64url(cu), textJurnal(w.j), w.s))) continue;
+      const w = JSON.parse(new TextDecoder().decode(b)) as { v?: unknown; j?: unknown; s?: unknown };
+      // A new entry names the device that wrote it, as the server says it posted it; an older one is read as it was.
+      if (typeof w.j !== "string" || typeof w.s !== "string" || !(await verificSemnatura(dinB64url(cu), w.v === 2 ? textJurnal2(y.loc, w.j) : textJurnal(w.j), w.s))) continue;
       const x = JSON.parse(w.j) as IntrareJurnal;
+      // What deletes is done only when signed with the person's current key: an old key, which a device removed since
+      // may still hold, can't delete what is kept now (L10).
+      if ((x?.fel === "sterg" || x?.fel === "sterg-acte") && cu !== eu.publica) continue;
       if (x && (x.fel === "nume" || x.fel === "rol" || x.fel === "sterg" || x.fel === "sterg-acte")) out.push(x);
     } catch { /* not ours to read */ }
   }
@@ -449,7 +505,8 @@ export function citescInvitatia(adresa: string): { inv: string; aceeasi?: true }
 export async function intru(apel: ApelFirma, inv: string, nume: string, persoana?: { cheie: Persoana; nume: string }): Promise<{ loc: Loc; de: string; aceeasi?: true }> {
   const loc = await locNou();
   const r = await apel<{ de: string; aceeasi?: boolean }>("intra", {
-    inv, cheie: loc.publica, nume, sig: await semnez(loc.privata, `colshare-intra-v1\n${inv}\n${loc.id}`),
+    // The person key it brings is signed too: the device that approves checks it against the key the code confirmed (P1).
+    inv, cheie: loc.publica, nume, sig: await semnez(loc.privata, textIntrare(inv, loc.id, persoana?.cheie.publica)),
     ...(persoana ? { persoana: { cheie: persoana.cheie.publica, nume: persoana.nume } } : {}),
   });
   if (typeof r.de !== "string" || !estePublica(dinB64url(r.de))) throw new EroareFirma(502);
@@ -462,11 +519,19 @@ export async function intru(apel: ApelFirma, inv: string, nume: string, persoana
  */
 export async function aprob(apel: ApelFirma, loc: Loc, inv: string, cheieNoua: string, inel: Inel, aceeasi?: Persoana, persoanaNoua?: string): Promise<string> {
   const idNou = await idLoc(dinB64url(cheieNoua));
-  // The person a colleague's device starts, as its answer to the invitation named it.
-  if (!aceeasi && persoanaNoua === undefined) persoanaNoua = (await apel<{ cerut?: { persoana?: { cheie?: string } } }>("invitatie", { inv }, loc)).cerut?.persoana?.cheie;
+  // What the device answered, checked against the key the safety code confirmed: the person key it brings is the one it
+  // signed, not one the server put there (P1).
+  const { cerut } = await apel<{ cerut?: { cheie?: string; sig?: string; persoana?: { cheie?: string } } }>("invitatie", { inv }, loc);
+  const adusa = typeof cerut?.persoana?.cheie === "string" ? cerut.persoana.cheie : undefined;
+  if (!cerut || cerut.cheie !== cheieNoua || typeof cerut.sig !== "string" || !(await verificSemnatura(dinB64url(cheieNoua), textIntrare(inv, idNou, adusa), cerut.sig))) throw new EroareFirma(403, "semnatura");
+  if (!aceeasi && persoanaNoua !== undefined && persoanaNoua !== adusa) throw new EroareFirma(403, "semnatura");
+  if (!aceeasi) persoanaNoua = adusa;
   const p = aceeasi?.id ?? (persoanaNoua ? await idLoc(dinB64url(persoanaNoua)) : undefined);
+  // What is sealed to the new device, signed by this one: the new device checks it with this device's key (C1).
+  const d = await sigilezInel(inel, cheieNoua);
+  const pinel = aceeasi ? await sigilezPersoana(aceeasi, cheieNoua) : undefined;
   const { loc: id } = await apel<{ loc: string }>("aproba", {
-    inv, inel: { g: cheiaCurenta(inel).g, d: await sigilezInel(inel, cheieNoua) }, ...(aceeasi ? { pinel: await sigilezPersoana(aceeasi, cheieNoua) } : {}),
+    inv, inel: { g: cheiaCurenta(inel).g, d, s: await semnez(loc.privata, textInelNou(idNou, d, pinel)) }, ...(pinel ? { pinel } : {}),
     // The device approved here, and the person it starts, vouched for with the firm's key (verificDirector).
     semn: await semnezLoc(inel, { id: idNou, cheie: cheieNoua, p }),
     ...(persoanaNoua && p && !aceeasi ? { semnPersoana: await semnezPersoana(inel, { id: p, cheie: persoanaNoua }) } : {}),
@@ -481,7 +546,10 @@ export async function aprob(apel: ApelFirma, loc: Loc, inv: string, cheieNoua: s
 export async function generatieNoua(apel: ApelFirma, loc: Loc, inel: Inel, stare: StareFirma, dir?: Director): Promise<{ inel: Inel; certificat?: string }> {
   // The ring goes only to devices this one can vouch for: one the server added on its own never gets it.
   if (dir && stare.scaune.some((x) => !dir.scaune.has(x.id))) throw new EroareFirma(409, "director");
-  const noua = await cheieFirmaNoua(stare.g + 1);
+  // Chained to this device's current generation, which must be the server's (C1).
+  const inainte = cheiaCurenta(inel);
+  if (inainte.g !== stare.g) throw new EroareFirma(409, "director");
+  const noua = await cheieFirmaNoua(stare.g + 1, inainte);
   const dupa: Inel = { chei: [...inel.chei, noua] };
   const inele: Record<string, string> = {};
   for (const s of stare.scaune) inele[s.id] = await sigilezInel(dupa, s.cheie);

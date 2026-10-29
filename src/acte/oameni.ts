@@ -66,6 +66,13 @@ export interface Om {
   astept?: true;
   /** The last relay items taken from them: one handed in again is dropped. */
   vazute?: string[];
+  /** When each of `vazute` was sent (the same order); none on items taken before this was kept. */
+  vazuteLa?: string[];
+  /**
+   * The newest send time among items that left `vazute`: anything sent at or before it is dropped, so the relay can't
+   * hand in an old envelope again once 300 newer ones have pushed it out (attack test 2026-10-29, L11).
+   */
+  podea?: string;
   /** When their newest greeting was sent: an older one changes nothing. */
   salutLa?: string;
 }
@@ -163,8 +170,13 @@ export function citesteCarte(adresa: string): Carte | undefined {
   }
 }
 
-/** PBKDF2 rounds for each key's half of the safety code: every key an attacker tries costs that many too. */
-const RUNDE_COD = 4096;
+/**
+ * PBKDF2 rounds for each key's half of the safety code: every key an attacker tries costs that many too. 200,000 since
+ * 2026-10-29 (was 4,096): a card's key lives long, so a match for one half could be sought in advance, and 15 digits
+ * at 4,096 rounds left that at about 13 GPU-years (attack test 2026-10-29, L12). Both phones, and the desk, must count
+ * the same, so an app built before shows another code.
+ */
+const RUNDE_COD = 200_000;
 
 /** One key's half of the safety code: 15 digits from PBKDF2-SHA-256 of the key (one call, done by the browser). */
 async function jumatateCod(k: Uint8Array): Promise<string> {
@@ -482,9 +494,13 @@ export async function prelucrez(stare: StareOameni, eu: Chei, s: Pick<Sosire, "j
   const de = b64url(d.de);
   const om = l.oameni.find((o) => o.dela.includes(s.j));
   if (om) {
-    if (om.publica !== de || om.vazute?.includes(s.item)) return undefined;
+    if (om.publica !== de || om.vazute?.includes(s.item) || (om.podea && d.plic.la <= om.podea)) return undefined;
     if (om.astept && d.antet.fel !== "salut") return { fel: "pastrez" };
-    om.vazute = [...(om.vazute ?? []), s.item].slice(-MAX_VAZUTE);
+    const vazute = [...(om.vazute ?? []), s.item], la = [...(om.vazuteLa ?? (om.vazute ?? []).map(() => "")), d.plic.la];
+    const iese = la.slice(0, Math.max(0, vazute.length - MAX_VAZUTE)).filter(Boolean).sort().at(-1);
+    if (iese && (!om.podea || iese > om.podea)) om.podea = iese;
+    om.vazute = vazute.slice(-MAX_VAZUTE);
+    om.vazuteLa = la.slice(-MAX_VAZUTE);
     if (d.antet.fel === "salut") {
       if (!om.salutLa || d.plic.la > om.salutLa) Object.assign(om, { casuta: d.antet.casuta, jeton: d.antet.jeton, salutLa: d.plic.la });
       return undefined;
