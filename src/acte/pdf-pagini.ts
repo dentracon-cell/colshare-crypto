@@ -73,3 +73,31 @@ export async function randeazaPdf<C extends PanzaPdf>(pdfjs: PdfJs, date: Uint8A
   }
   return out;
 }
+
+/**
+ * A PDF's pages drawn one after another to be looked at in the app (attack test 2026-10-29, A3): no text layer, each
+ * page at most `latura` pixels on its longer side, handed to `pagina` as soon as it is drawn.
+ */
+export async function desenezPaginile<C extends PanzaPdf>(pdfjs: PdfJs, date: Uint8Array, panza: (w: number, h: number) => C, pagina: (c: C, n: number, total: number) => Promise<boolean | void> | boolean | void, o: { latura?: number; maxPagini?: number; standardFontDataUrl?: string } = {}): Promise<number> {
+  const sarcina = pdfjs.getDocument({ data: date.slice(), isEvalSupported: false, useSystemFonts: true, ...(o.standardFontDataUrl ? { standardFontDataUrl: o.standardFontDataUrl } : {}) });
+  const doc = await sarcina.promise;
+  const total = Math.min(doc.numPages, o.maxPagini ?? 300);
+  try {
+    for (let n = 1; n <= total; n++) {
+      const pag = await doc.getPage(n);
+      const v1 = pag.getViewport({ scale: 1 });
+      const v = pag.getViewport({ scale: (o.latura ?? 1800) / Math.max(v1.width, v1.height) });
+      const c = panza(Math.round(v.width), Math.round(v.height));
+      const g = c.getContext("2d") as { fillStyle: string; fillRect(x: number, y: number, w: number, h: number): void };
+      g.fillStyle = "#fff";
+      g.fillRect(0, 0, c.width, c.height);
+      await pag.render({ canvasContext: g, canvas: c, viewport: v }).promise;
+      pag.cleanup();
+      // The caller stops it by answering false (the viewer was closed).
+      if ((await pagina(c, n, total)) === false) break;
+    }
+  } finally {
+    await sarcina.destroy();
+  }
+  return total;
+}
