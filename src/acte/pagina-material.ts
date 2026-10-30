@@ -7,7 +7,7 @@ import { cifruFond } from "./cifru-fond.ts";
 import { gravura } from "./gravura.ts";
 import { faraMiscare } from "./material.ts";
 import type { ScenaLacat } from "./seif-lacat.ts";
-import { marcaSvg, sigiliuSvg } from "./sigiliu.ts";
+import { geometrie, marcaSvg, R_INEL, sigiliuSvg } from "./sigiliu.ts";
 
 /**
  * The band above the page, across the window: the wordmark over the ciphertext field (the desk's lock and the app have
@@ -58,8 +58,9 @@ export function sigiliuInFundal(tinta: Element | null): void {
     const m = Math.min(W, H);
     const t = tinta?.getBoundingClientRect();
     if (!t?.width) return { x: 0.62, y: Math.min(0.72, (0.72 * innerHeight) / H), r: (0.62 * Math.min(W, innerHeight)) / m, fond: 0 };
-    // As wide as the target's side: the ring stands clear of the target's corners all round.
-    return { x: (t.left + t.width / 2 + scrollX) / W, y: (t.top + t.height / 2 + scrollY) / H, r: Math.max(t.width, t.height) / m, fond: 0 };
+    // The target inside the seal's opening (the face within the ring): its corners 14 px inside the face's edge.
+    const fata = (Math.SQRT1_2 * Math.max(t.width, t.height) + 14) / (geometrie("fin").fata / R_INEL);
+    return { x: (t.left + t.width / 2 + scrollX) / W, y: (t.top + t.height / 2 + scrollY) / H, r: fata / m, fond: 0 };
   };
   let opreste = gravura(c, { ...optiuni(), deseneaza: !faraMiscare() });
   let latime = innerWidth;
