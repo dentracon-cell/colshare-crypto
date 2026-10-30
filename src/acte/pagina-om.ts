@@ -41,7 +41,11 @@ if (!carte) {
     ${play ? `<a class="buton-sigiliu" href="${PLAY}" target="_blank" rel="noopener">${tt("invit.play")}</a><p class="mic">${tt("o.dupa")}</p>` : ""}
     <p>${tt("o.text")}</p>
     ${copiez}${play ? "" : `<p class="mic">${tt("o.dupa")}</p>`}</div>
-    ${peCalculator ? `<div class="o-qr"><div class="qr" role="img" aria-label="${tt("o.qr")}">${svgQr(adresa, 220)}</div><p class="mic">${tt("o.qr")}</p></div>` : ""}</div>${piciorHtml(true)}`;
+    ${peCalculator ? `<div class="o-qr"><div class="qr" role="img" aria-label="${tt("o.qr")}">${svgQr(adresa, 220)}</div><p class="mic">${tt("o.qr")}</p></div>` : ""}</div>
+    ${peCalculator
+    // In a wide window the caption goes on the footer's line, under the code, level with the legal links (2026-10-30).
+    ? `<div class="o-subsol">${piciorHtml(true)}<p class="o-qr-jos">${tt("o.qr")}</p></div>`
+    : piciorHtml(true)}`;
   sigiliuInFundal(el.querySelector(".o-qr .qr"));
   document.getElementById("copiez")!.addEventListener("click", async (e) => {
     const b = e.currentTarget as HTMLButtonElement;
