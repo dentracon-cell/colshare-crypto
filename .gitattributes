@@ -1,0 +1,2 @@
+# LF everywhere: the link pages must build byte for byte the same on every system (npm run pagini).
+* text=auto eol=lf
