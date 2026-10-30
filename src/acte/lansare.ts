@@ -26,10 +26,19 @@ export function peAndroid(ua = globalThis.navigator?.userAgent ?? ""): boolean {
  * "Get Colshare on Google Play" under it. `live` and `android` only for the tests.
  */
 export function invitatie(cheie: Cheie, o: { live?: boolean; android?: boolean } = {}): string {
+  const play = cuPlay(o)
+    ? `<a class="invit-play" href="${PLAY}" target="_blank" rel="noopener">${esc(t("invit.play", { app: aplicatie.nume }))}</a>` : "";
+  return `<p class="invit">${frazaInvitatie(cheie)}${play}</p>`;
+}
+
+/** The invitation's sentence alone, the app's name linked to the home page. */
+export function frazaInvitatie(cheie: Cheie): string {
   const nume = esc(aplicatie.nume), text = esc(t(cheie, { app: aplicatie.nume }));
   const i = text.indexOf(nume);
-  const fraza = i < 0 ? text : `${text.slice(0, i)}<a href="/">${nume}</a>${text.slice(i + nume.length)}`;
-  const play = (o.live ?? LANSARE === "live") && (o.android ?? peAndroid())
-    ? `<a class="invit-play" href="${PLAY}" target="_blank" rel="noopener">${esc(t("invit.play", { app: aplicatie.nume }))}</a>` : "";
-  return `<p class="invit">${fraza}${play}</p>`;
+  return i < 0 ? text : `${text.slice(0, i)}<a href="/">${nume}</a>${text.slice(i + nume.length)}`;
+}
+
+/** Whether a Play link may show here: the app is live and this is an Android phone. */
+export function cuPlay(o: { live?: boolean; android?: boolean } = {}): boolean {
+  return (o.live ?? LANSARE === "live") && (o.android ?? peAndroid());
 }

@@ -2,15 +2,16 @@
 // without the app or on a computer: who gave the card, and the link to open with the app ("Add from a card"). Nothing
 // is fetched or sent. Built into colshare-web/o/o.js by scripts/acte.mjs.
 import aplicatie from "./aplicatie.json";
-import { marcaSvg } from "./sigiliu.ts";
 import { punLimba, limbaTelefonului, t, type Cheie } from "./limba.ts";
 import { citesteCarte } from "./oameni.ts";
 import { svgQr } from "../core/qr.ts";
-import { invitatie } from "./lansare.ts";
+import { cuPlay, frazaInvitatie, invitatie, PLAY } from "./lansare.ts";
 import { piciorHtml } from "./legal.ts";
+import { montezBanda } from "./pagina-material.ts";
 
 punLimba(limbaTelefonului());
-document.getElementById("marca")!.innerHTML = marcaSvg(32, aplicatie.nume);
+// The link pages' night band with the wordmark (as /p/ and /a/), so a card reads as Colshare's at a glance.
+montezBanda();
 const el = document.getElementById("pagina")!;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const tt = (k: Cheie, v?: Record<string, string | number>) => esc(t(k, v));
@@ -25,12 +26,18 @@ document.title = `${t("o.titlu")} · ${aplicatie.nume}`;
 if (!carte) {
   el.innerHTML = `<h1>${tt("o.titlu")}</h1><p>${tt("o.fara-carte")}</p>${invitatie("a.invit")}${piciorHtml(true)}`;
 } else {
-  // On a computer (a fine pointer), the card as a QR code, to carry it to the phone with its camera (2026-10-30).
+  // The card doubles as an invitation (2026-10-30): who gave it and what Colshare is come first; on an Android phone,
+  // once the app is on Google Play, getting it is the one thing to do, since a phone that has it opens the link in the
+  // app and never shows this page. On a computer (a fine pointer), the card as a QR code, to carry it to the phone.
   const peCalculator = matchMedia("(pointer: fine)").matches;
-  el.innerHTML = `<h1>${tt("o.titlu")}</h1><p class="titlu-pachet">${tt("o.de", { nume: carte.nume })}</p><p>${tt("o.text")}</p>
+  const play = cuPlay();
+  const copiez = `<button class="buton-ton copiez" id="copiez">${tt("trimit.copiez")}</button>`;
+  el.innerHTML = `<h1>${tt("o.titlu")}</h1><p class="titlu-pachet">${tt("o.de", { nume: carte.nume })}</p>
+    <p class="o-invit">${frazaInvitatie("a.invit")}</p>
+    ${play ? `<a class="buton-sigiliu" href="${PLAY}" target="_blank" rel="noopener">${tt("invit.play")}</a><p class="mic">${tt("o.dupa")}</p>` : ""}
+    <p>${tt("o.text")}</p>
     ${peCalculator ? `<div class="qr" role="img" aria-label="${tt("o.qr")}">${svgQr(adresa, 220)}</div><p class="mic">${tt("o.qr")}</p>` : ""}
-    <button class="buton ${peCalculator ? "contur" : "plin"} mare" id="copiez">${tt("trimit.copiez")}</button>
-    <p class="mic">${tt("o.dupa")}</p>${invitatie("a.invit")}${piciorHtml(true)}`;
+    ${copiez}${play ? "" : `<p class="mic">${tt("o.dupa")}</p>`}${piciorHtml(true)}`;
   document.getElementById("copiez")!.addEventListener("click", async (e) => {
     const b = e.currentTarget as HTMLButtonElement;
     try {
