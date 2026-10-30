@@ -7,6 +7,9 @@ with a document, instead of taking our word for it.
 This is the same code that runs in the Colshare apps and on colshare.app, copied here unchanged. It is not a library
 and is not meant to be installed. Read it, run its tests and try to break it.
 
+It also holds the full source of colshare.app's link pages, the pages a link opens in your browser. You can build them
+yourself and check that the site serves exactly that code (below).
+
 ## What the code does
 
 **Send links that open once.** A document is encrypted in the browser or app with AES-256-GCM under a fresh 32-byte
@@ -37,12 +40,42 @@ forms, annotations) before a firm keeps it. See `src/acte/pdf-curat.ts`.
 
 Everything uses the platform's Web Crypto API. There is no home-made cryptography.
 
+## Check that colshare.app runs this code
+
+When you open a Colshare link, your browser runs one of six scripts from colshare.app. This repo has everything they
+are built from, and a script that builds them with the site's own settings and compares each byte with what the site
+serves right now:
+
+```bash
+npm install
+npm run pagini
+```
+
+| Page | Script | What it does |
+|---|---|---|
+| `colshare.app/p/` | `/p/p.js` | opens a send link |
+| `colshare.app/a/` | `/a/a.js` | answers an ask for documents |
+| `colshare.app/copie/` | `/copie/c.js` | makes a safe copy |
+| `colshare.app/o/` | `/o/o.js` | shows a People card |
+| `colshare.app/v/` | `/v/v.js` | checks a receipt |
+| `colshare.app/acte/formular` | `/acte/formular.js` | the withdrawal, cancellation and report forms |
+
+"same" on every line means the page your browser runs is this code, built with esbuild 0.28.2 (pinned in
+`package.json`). `npm run pagini -- --scrie` also writes the built files to `dist/`, to read or diff them. If a line
+says "DIFFERENT", the site changed after this repo was last updated, or something is wrong. Either way, please tell us.
+
+You can also watch the key stay in your browser. Open a link with the developer tools' Network tab open: the requests
+carry the link's id, never the part after the `#`.
+
+The phone apps are not covered by this check yet. Their builds are not reproducible from this repo.
+
 ## What is not here
 
 - **The relay (server).** It stores encrypted chunks, enforces the one opening of a link, rate limits and expiry. Its
   side of the guarantee is "it only ever receives what this code sends", which you can check here. The tests use a
   small in-memory stand-in for it.
-- **The apps' and the desk's interface**, payments, licensing and e-mail.
+- **The phone apps' and the Colshare Business desk's interface**, payments, licensing and e-mail. The link pages'
+  interface is here.
 - **The internal documents** that comments refer to (`decisions.md`, `docs/…`). They record why something was decided
   and are not published.
 
