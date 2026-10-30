@@ -79,13 +79,18 @@ deletes the file. It always did, but after the first download of the last piece 
 while the page confirmed the opening, and someone else holding the link could fetch it in that time. Now the download
 that takes the last piece deletes everything before it returns.
 
+## Also fixed: who signed a firm's receipt
+
+A forged "firm receipt" could show "the signature holds" on the receipt-check page under any firm's name, because the
+page checked that the receipt wasn't changed, not who the firm was. Since 30 October, a firm's receipt PDF carries
+the firm's certificate, signed by Colshare. The check page names the firm as checked only when that certificate is
+for the exact key the receipt is signed with and was valid on the receipt's day. From the QR code alone, which has no
+room for the certificate, the firm's name is marked "not checked". The check still runs entirely in your browser.
+
 ## Kept on purpose
 
 These were found and left as they are, for the reasons given.
 
-- **A forged "firm receipt" can show "the signature holds" on the receipt-check page.** The page checks that the
-  receipt wasn't changed, not who the firm is, and it sends nothing anywhere. Since 29 October it says that the firm's
-  name isn't checked there and asks you to compare the firm's key code.
 - **The order page tells whether a tax ID already has a licence.** The buyer must know that before paying. The
   answer is cached so it can't be used to flood the business register with lookups.
 - **An invitation link works like a password until it is approved.** The approving device names the new device and

@@ -5,6 +5,7 @@
 import aplicatie from "./aplicatie.json";
 import { codCheie, verific, verificFisier, type DovadaCitita } from "./dovada.ts";
 import { campuriDeclaratie } from "./dovada-text.ts";
+import { verificCertificat, type Certificat } from "./firma.ts";
 import { piciorHtml } from "./legal.ts";
 import { data, limbaTelefonului, punLimba, t, type Cheie } from "./limba.ts";
 import { marcaSvg } from "./sigiliu.ts";
@@ -16,12 +17,24 @@ const el = document.getElementById("pagina")!;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const tt = (k: Cheie, v?: Record<string, string | number>) => esc(t(k, v));
 
-async function rezultat(v: DovadaCitita): Promise<string> {
+/**
+ * A statement and whether it holds. A firm's receipt names its firm as checked only with `firma`: the certificate
+ * colshare.app signed for the key the receipt is signed with, valid on the receipt's day, which only the receipt's PDF
+ * carries. From the QR code alone, the firm's name is shown as the receipt states it, marked not checked (attack test
+ * 2026-10-29, K1).
+ */
+async function rezultat(v: DovadaCitita, firma?: Certificat): Promise<string> {
+  const deFirma = v.d.fel === "primire" || v.d.fel === "trimitere";
+  // The signing firm's own field: the receiver on a receipt of papers received, the sender on one of papers sent.
+  const campFirma = v.d.fel === "primire" ? t("dovada.camp.primit") : t("dovada.camp.de");
+  const campuri = campuriDeclaratie(v.d).map(([k, x]): [string, string] =>
+    (deFirma && v.tine && !firma && k === campFirma ? [`${k} · ${t("dovada.camp.neverificat")}`, x] : [k, x]));
   return `<div class="card"><p class="titlu-pachet">${tt(v.d.fel === "copie" ? "dovada.titlu.copie" : v.d.fel === "primire" ? "dovada.titlu.primire" : v.d.fel === "trimitere" ? "dovada.titlu.trimitere" : "dovada.titlu.chitanta")}</p>
     <p class="banda ${v.tine ? "ok" : "rau"}" role="status">${tt(v.tine ? "dovada.tine" : "dovada.nu-tine")}</p>
-    ${v.tine && (v.d.fel === "primire" || v.d.fel === "trimitere") ? `<p class="mic">${tt("dovada.firma-nedovedita")}</p>` : ""}
+    ${v.tine && deFirma && firma ? `<p class="banda ok">${tt("dovada.firma-verificata", { firma: firma.firma, cui: firma.cui })}</p>` : ""}
+    ${v.tine && deFirma && !firma ? `<p class="mic">${tt("dovada.firma-nedovedita")} ${tt("dovada.firma-fisier")}</p>` : ""}
     ${v.tine ? "" : `<p class="eticheta nedovedit-titlu">${tt("dovada.nedovedit")}</p>`}
-    <ul class="campuri${v.tine ? "" : " nedovedit"}">${campuriDeclaratie(v.d).map(([k, x]) => `<li><span class="eticheta">${esc(k)}</span><span class="valoare">${esc(x)}</span></li>`).join("")}</ul>
+    <ul class="campuri${v.tine ? "" : " nedovedit"}">${campuri.map(([k, x]) => `<li><span class="eticheta">${esc(k)}</span><span class="valoare">${esc(x)}</span></li>`).join("")}</ul>
     <p class="mic">${tt("dovada.cheie", { cod: await codCheie(v.publica) })}</p></div>`;
 }
 
@@ -40,8 +53,11 @@ async function arata(): Promise<void> {
     const out = document.getElementById("fisier-rezultat")!;
     if (!f) return;
     const r = await verificFisier(new Uint8Array(await f.arrayBuffer()));
+    // The firm as colshare.app's certificate names it: only for a file exactly as signed, and only when the certificate
+    // is for the receipt's own key and was valid on the receipt's day.
+    const firma = r.stare === "bun" && r.certificat ? await verificCertificat(r.certificat, r.dovada.publica, undefined, new Date(r.dovada.d.data)) : undefined;
     out.innerHTML = r.stare === "fara" ? `<p class="banda rau">${tt("v.fisier.fara")}</p>`
-      : `<p class="banda ${r.stare === "bun" ? "ok" : "rau"}">${r.stare === "bun" ? tt("v.fisier.bun", { data: data(r.dovada.d.data) }) : tt("v.fisier.schimbat")}</p>${r.dovada.dovada === v?.dovada ? "" : await rezultat(r.dovada)}`;
+      : `<p class="banda ${r.stare === "bun" ? "ok" : "rau"}">${r.stare === "bun" ? tt("v.fisier.bun", { data: data(r.dovada.d.data) }) : tt("v.fisier.schimbat")}</p>${r.dovada.dovada === v?.dovada && !firma ? "" : await rezultat(r.dovada, firma)}`;
   });
 }
 

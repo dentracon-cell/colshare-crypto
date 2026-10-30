@@ -222,9 +222,13 @@ async function rezumatFisier(dovada: string, imagini: Uint8Array[]): Promise<Uin
   return lipeste(enc(`${ETICHETA_FISIER}${dovada}\n`), await sha256(lipeste(...h)));
 }
 
-/** The PDF's /ColshareProof value: the link's proof, "~", the signature over it and the pictures. */
-export async function legFisier(k: CheieSemnare, dovada: string, imagini: Uint8Array[]): Promise<string> {
-  return `${dovada}~${b64url(await semnatura(k, await rezumatFisier(dovada, imagini)))}`;
+/**
+ * The PDF's /ColshareProof value: the link's proof, "~", the signature over it and the pictures. A firm's receipt adds
+ * "~" and the firm's certificate (./firma.ts), so /v/ can name the firm as Colshare checked it: the certificate is
+ * signed by colshare.app and names the key the receipt is signed with (attack test 2026-10-29, K1).
+ */
+export async function legFisier(k: CheieSemnare, dovada: string, imagini: Uint8Array[], certificat?: string): Promise<string> {
+  return `${dovada}~${b64url(await semnatura(k, await rezumatFisier(dovada, imagini)))}${certificat ? `~${certificat}` : ""}`;
 }
 
 /** The pictures (DCTDecode streams) of a PDF written by core/scanner/pdf.ts, in order. */
@@ -280,12 +284,13 @@ function caScris(pdf: Uint8Array, text: string): boolean {
  * A file checked: "fara" when it carries no proof (not made by Colshare, or saved again by another program);
  * "schimbat" when its pictures are not the ones signed; "bun" when every picture is exactly what was signed.
  */
-export async function verificFisier(pdf: Uint8Array): Promise<{ stare: "fara" } | { stare: "schimbat" | "bun"; dovada: DovadaCitita }> {
+export async function verificFisier(pdf: Uint8Array): Promise<{ stare: "fara" } | { stare: "schimbat" | "bun"; dovada: DovadaCitita; certificat?: string }> {
   const text = new TextDecoder("latin1").decode(pdf);
-  const m = new RegExp(`/${CHEIE_PDF} \\(([A-Za-z0-9_.-]+)~([A-Za-z0-9_-]{86})\\)`).exec(text);
+  const m = new RegExp(`/${CHEIE_PDF} \\(([A-Za-z0-9_.-]+)~([A-Za-z0-9_-]{86})(?:~([A-Za-z0-9_.-]{20,1300}))?\\)`).exec(text);
   const dovada = m && await verific(m[1]);
   if (!m || !dovada) return { stare: "fara" };
   const imagini = imaginiPdf(pdf, text);
   const bun = dovada.tine && imagini.length > 0 && caScris(pdf, text) && await tine(dovada.publica, dinB64url(m[2]), await rezumatFisier(m[1], imagini));
-  return { stare: bun ? "bun" : "schimbat", dovada };
+  // The certificate is checked by the caller (./firma.ts verificCertificat, against the receipt's key and day).
+  return { stare: bun ? "bun" : "schimbat", dovada, ...(m[3] ? { certificat: m[3] } : {}) };
 }
