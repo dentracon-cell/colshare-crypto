@@ -110,6 +110,11 @@ never reach the relay, that a link opens once, that sealed items open only with 
 redacted PDF has no text layer and none of the hidden numbers in its bytes. They run on Node with
 [@napi-rs/canvas](https://github.com/Brooooooklyn/canvas) in place of a browser canvas.
 
+## Security tests
+
+What we tested, what we found and what we fixed is in [SECURITY-TESTS.md](SECURITY-TESTS.md). Those were self-tests,
+not an independent audit.
+
 ## Reporting a problem
 
 Write to service@colshare.app (also listed in
