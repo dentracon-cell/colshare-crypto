@@ -21,6 +21,9 @@ import { htmlTrusa } from "./truse-html.ts";
 import { limbaTrusa, trusa } from "./truse.ts";
 import { deschidCerereFirma, verificCertificat, type Certificat } from "./firma.ts";
 import { invitatie } from "./lansare.ts";
+import { editezNegru, jpegCuNegru, zoneDe } from "./editor-negru.ts";
+import { desenezPaginile, type PdfJs } from "./pdf-pagini.ts";
+import type { Zona } from "./copie-sigura.ts";
 
 punLimba(limbaPaginii());
 montezBanda(true);
@@ -47,6 +50,7 @@ const ICO: Record<string, string> = {
   sageata: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   urc: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
   telefon: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
+  ascund: '<rect x="4" y="9" width="16" height="6" rx="1" fill="currentColor"/><path d="M3 5h18M3 19h18"/>',
 };
 const ico = (n: string) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICO[n]}</svg>`;
 
@@ -56,8 +60,12 @@ const r = relay("");
 /** A firm's ask with a certificate that holds (./firma.ts): the firm is named as checked, not as typed. */
 let firma: Certificat | undefined;
 
-/** What one slot holds: photos as JPEG pages (with a picture to show), PDFs as they are. */
-interface Piesa { tip: "jpeg" | "pdf"; nume: string; date: Uint8Array; w: number; h: number; url?: string }
+/**
+ * What one slot holds: photos as JPEG pages (with a picture to show), PDFs as they are. A page with something hidden
+ * keeps its original JPEG (`orig`), the boxes drawn and the code-lines switch, so it can be edited again; `date` is
+ * what is sent, the black painted in.
+ */
+interface Piesa { tip: "jpeg" | "pdf"; nume: string; date: Uint8Array; w: number; h: number; url?: string; orig?: Blob; manual?: Zona[]; mrz?: boolean; ascunse?: number }
 /** One slot per paper asked, then "something else". */
 let sloturi: { nume: string; piese: Piesa[] }[] = [];
 let altDeschis = false;
@@ -144,8 +152,11 @@ let umplute = new Set<number>();
 function slotHtml(s: { nume: string; piese: Piesa[] }, i: number): string {
   const n = s.piese.length;
   const pagini = s.piese.reduce((x, p) => x + (p.tip === "jpeg" ? 1 : 0), 0);
+  // A page can have part of it hidden (./editor-negru.ts); a PDF is first turned into pages for that.
   const piese = s.piese.map((p, j) => `<span class="piesa">${p.url ? `<img src="${p.url}" alt="">` : `<span class="piesa-pdf">${ico("fisier")}<em>PDF</em></span>`}
+    ${p.tip === "jpeg" ? `<button class="piesa-ascund" data-ascund="${i}:${j}" aria-label="${tt("a.ascund")}">${ico("ascund")}${p.ascunse ? p.ascunse : ""}</button>` : ""}
     <button class="piesa-x" data-scot="${i}:${j}" aria-label="${tt("a.sterg")}">${ico("x")}</button></span>`).join("");
+  const areaPdf = s.piese.some((p) => p.tip === "pdf");
   const alege = `<input type="file" data-slot="${i}" accept="image/*,application/pdf" multiple hidden>`;
   // A phone photographs (the camera first) or chooses; a computer takes files dropped on the card, or chosen.
   const actiuni = TELEFON
@@ -156,6 +167,8 @@ function slotHtml(s: { nume: string; piese: Piesa[] }, i: number): string {
     <div class="slot-cap"><span class="slot-bifa">${n ? ico("ok") : i + 1}</span>
       <span class="slot-nume"><b>${esc(mare(s.nume))}</b>${n ? `<small>${pagini && firma ? tt(pagini === 1 ? "a.pagina" : "a.pagini", { n: pagini }) : tt(n === 1 ? "a.fisier" : "a.fisiere", { n })}</small>` : ""}</span></div>
     ${n ? `<div class="piese">${piese}</div>` : ""}
+    ${n && !areaPdf ? `<p class="mic sfat-ascund">${tt("a.ascund.sfat")}</p>` : ""}
+    ${areaPdf ? `<button class="buton-pagini" data-pagini="${i}">${ico("ascund")}${tt("a.pdf.pagini")}</button>` : ""}
     ${actiuni}
   </li>`;
 }
@@ -243,6 +256,13 @@ function formular(mesaj?: string) {
       formular();
     });
   }
+  for (const b of el.querySelectorAll<HTMLButtonElement>("[data-ascund]")) {
+    b.addEventListener("click", () => {
+      const [i, j] = b.dataset.ascund!.split(":").map(Number);
+      void ascundIn(i, j);
+    });
+  }
+  for (const b of el.querySelectorAll<HTMLButtonElement>("[data-pagini]")) b.addEventListener("click", () => void inPagini(Number(b.dataset.pagini)));
   document.getElementById("alt")?.addEventListener("click", () => { altDeschis = true; formular(); });
   // A firm's request has no name field: the firm named its client when it made the link.
   const de = document.getElementById("de") as HTMLInputElement | null;
@@ -250,6 +270,70 @@ function formular(mesaj?: string) {
   const m = document.getElementById("mesaj") as HTMLTextAreaElement | null;
   m?.addEventListener("input", () => { notaClient = m.value; });
   document.getElementById("trimit")!.addEventListener("click", trimit);
+}
+
+/**
+ * Part of a page hidden (decisions.md 2026-10-30, "Black out on the ask page"): the editor over its original picture,
+ * then what is sent is drawn again with the black painted in. Nothing hidden leaves the device.
+ */
+async function ascundIn(i: number, j: number): Promise<void> {
+  const p = sloturi[i]?.piese[j];
+  if (!p || p.tip !== "jpeg") return;
+  p.orig ??= new Blob([p.date as BlobPart], { type: "image/jpeg" });
+  const img = await createImageBitmap(p.orig);
+  try {
+    const r = await editezNegru(img, p.manual ?? [], p.mrz ?? false, {
+      titlu: t("a.ascund.titlu"), text: t("a.ascund.text"), mrz: t("copie.mrz"), anulez: t("copie.anulez"), gata: t("a.ascund.gata"), renunt: t("a.ascund.renunt"),
+    });
+    if (!r) return;
+    const zone = zoneDe(img, r.manual, r.mrz);
+    const nou = zone.length ? await jpegCuNegru(img, zone) : { date: new Uint8Array(await p.orig.arrayBuffer()), w: img.width, h: img.height, blob: p.orig };
+    if (p.url) URL.revokeObjectURL(p.url);
+    Object.assign(p, { date: nou.date, w: nou.w, h: nou.h, url: URL.createObjectURL(nou.blob), manual: r.manual, mrz: r.mrz, ascunse: zone.length });
+  } finally {
+    img.close();
+  }
+  formular();
+}
+
+/** pdf.js, from the desk's files on this site, the first time a PDF is turned into pages here. */
+let pdfjs: Promise<PdfJs> | undefined;
+function incarcPdfJs(): Promise<PdfJs> {
+  const baza = new URL("/birou/pdf/", location.href).href;
+  pdfjs ??= (import(/* @vite-ignore */ `${baza}pdf.min.mjs`) as Promise<PdfJs & { GlobalWorkerOptions: { workerSrc: string } }>).then((m) => {
+    m.GlobalWorkerOptions.workerSrc = `${baza}pdf.worker.min.mjs`;
+    return m;
+  });
+  pdfjs.catch(() => { pdfjs = undefined; });
+  return pdfjs;
+}
+/** The most pages a PDF is turned into here. */
+const PAGINI_PDF = 30;
+
+/** A slot's PDFs turned into pages (pictures), each of which can then have part of it hidden. */
+async function inPagini(i: number): Promise<void> {
+  const s = sloturi[i];
+  if (!s) return;
+  formular(t("a.pdf.lucrez"));
+  try {
+    const piese: Piesa[] = [];
+    for (const p of s.piese) {
+      if (p.tip !== "pdf") { piese.push(p); continue; }
+      const pagini: Piesa[] = [];
+      const total = await desenezPaginile(await incarcPdfJs(), p.date, (w, h) => Object.assign(document.createElement("canvas"), { width: w, height: h }), async (c, n) => {
+        const blob = await new Promise<Blob>((ok, rau) => c.toBlob((x) => (x ? ok(x) : rau(new Error("JPEG"))), "image/jpeg", 0.88));
+        pagini.push({ tip: "jpeg", nume: `${p.nume} ${n}`, date: new Uint8Array(await blob.arrayBuffer()), w: c.width, h: c.height, url: URL.createObjectURL(blob) });
+        c.width = c.height = 0;
+      }, { latura: 2000, maxPagini: PAGINI_PDF + 1 });
+      if (total > PAGINI_PDF) throw new Error("pagini");
+      piese.push(...pagini);
+    }
+    s.piese = piese;
+    formular();
+  } catch (e) {
+    console.warn(e);
+    formular(t("a.pdf.eroare"));
+  }
 }
 
 /** "Not sent yet: X, Y." with each paper a button back to its card. */

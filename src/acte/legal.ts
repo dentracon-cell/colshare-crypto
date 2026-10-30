@@ -7,7 +7,7 @@ import { limbaCurenta, LIMBI_VERIFICATE, t, type Cheie } from "./limba.ts";
 import type { Plan } from "./planuri.ts";
 
 /** The terms' version accepted at the first start (the drafts' VERSION), kept on the phone. */
-export const VERSIUNE_TERMENI_ACTE = "0.10";
+export const VERSIUNE_TERMENI_ACTE = "0.11";
 
 /**
  * The published version of the terms and the privacy notice (colshare-web/acte/versiune-termeni.json, made by

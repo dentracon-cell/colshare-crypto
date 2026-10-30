@@ -21,7 +21,8 @@ const tt = (k: Cheie, v?: Record<string, string | number>) => esc(t(k, v));
  * A statement and whether it holds. A firm's receipt names its firm as checked only with `firma`: the certificate
  * colshare.app signed for the key the receipt is signed with, valid on the receipt's day, which only the receipt's PDF
  * carries. From the QR code alone, the firm's name is shown as the receipt states it, marked not checked (attack test
- * 2026-10-29, K1).
+ * 2026-10-29, K1). A marked copy a firm sent (2026-10-30) carries the certificate the same way, and is named as that
+ * firm's copy.
  */
 async function rezultat(v: DovadaCitita, firma?: Certificat): Promise<string> {
   const deFirma = v.d.fel === "primire" || v.d.fel === "trimitere";
@@ -31,7 +32,7 @@ async function rezultat(v: DovadaCitita, firma?: Certificat): Promise<string> {
     (deFirma && v.tine && !firma && k === campFirma ? [`${k} · ${t("dovada.camp.neverificat")}`, x] : [k, x]));
   return `<div class="card"><p class="titlu-pachet">${tt(v.d.fel === "copie" ? "dovada.titlu.copie" : v.d.fel === "primire" ? "dovada.titlu.primire" : v.d.fel === "trimitere" ? "dovada.titlu.trimitere" : "dovada.titlu.chitanta")}</p>
     <p class="banda ${v.tine ? "ok" : "rau"}" role="status">${tt(v.tine ? "dovada.tine" : "dovada.nu-tine")}</p>
-    ${v.tine && deFirma && firma ? `<p class="banda ok">${tt("dovada.firma-verificata", { firma: firma.firma, cui: firma.cui })}</p>` : ""}
+    ${v.tine && firma ? `<p class="banda ok">${tt(v.d.fel === "copie" ? "dovada.firma-copie" : "dovada.firma-verificata", { firma: firma.firma, cui: firma.cui })}</p>` : ""}
     ${v.tine && deFirma && !firma ? `<p class="mic">${tt("dovada.firma-nedovedita")} ${tt("dovada.firma-fisier")}</p>` : ""}
     ${v.tine ? "" : `<p class="eticheta nedovedit-titlu">${tt("dovada.nedovedit")}</p>`}
     <ul class="campuri${v.tine ? "" : " nedovedit"}">${campuri.map(([k, x]) => `<li><span class="eticheta">${esc(k)}</span><span class="valoare">${esc(x)}</span></li>`).join("")}</ul>
