@@ -62,14 +62,36 @@ export function sigiliuInFundal(tinta: Element | null): void {
     const fata = (Math.SQRT1_2 * Math.max(t.width, t.height) + 14) / (geometrie("fin").fata / R_INEL);
     return { x: (t.left + t.width / 2 + scrollX) / W, y: (t.top + t.height / 2 + scrollY) / H, r: fata / m, fond: 0 };
   };
+  // Where the seal was last drawn, in document pixels; it is drawn again whenever the target or the page moves it (the
+  // web fonts arriving after the first draw reflow the words and move the QR code, which left it out of the seal).
+  const loc = () => {
+    const t = tinta?.getBoundingClientRect(), d = document.documentElement;
+    return t?.width ? `${Math.round(t.left + t.width / 2 + scrollX)},${Math.round(t.top + t.height / 2 + scrollY)},${Math.round(t.width)},${d.clientWidth},${d.scrollHeight}` : `${d.clientWidth},${d.scrollHeight}`;
+  };
+  let acolo = loc();
   let opreste = gravura(c, { ...optiuni(), deseneaza: !faraMiscare() });
-  let latime = innerWidth;
-  addEventListener("resize", () => {
-    if (Math.abs(innerWidth - latime) < 40) return;
-    latime = innerWidth;
-    opreste();
-    opreste = gravura(c, { ...optiuni(), deseneaza: false });
-  });
+  let cadru = 0;
+  const verific = () => {
+    cancelAnimationFrame(cadru);
+    cadru = requestAnimationFrame(() => {
+      const aici = loc();
+      if (aici === acolo) return;
+      acolo = aici;
+      opreste();
+      opreste = gravura(c, { ...optiuni(), deseneaza: false });
+      acolo = loc();
+    });
+  };
+  addEventListener("resize", verific);
+  document.fonts?.ready.then(verific);
+  // The page and each box between it and the target: a column growing moves the target without moving the page.
+  if (typeof ResizeObserver === "function") {
+    const ro = new ResizeObserver(verific);
+    for (let e = tinta; e && e !== document.body; e = e.parentElement) {
+      ro.observe(e);
+      for (const frate of e.parentElement?.children ?? []) if (frate !== e) ro.observe(frate);
+    }
+  }
 }
 
 /**
