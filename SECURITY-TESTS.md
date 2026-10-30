@@ -103,6 +103,22 @@ devices and replaces the firm's recovery key. The owner can hand the firm over, 
 take the firm over with the firm's recovery file. Every device still holds the firm's key, because it needs it to open
 documents. The owner decides who joins and who is removed.
 
+## 30 October 2026: a fourth round, on what was new
+
+Agents attacked the features added on 30 October the same way: blacking out on the request page, marked copies, how
+the check page names a firm, checking people, and the firm owner. Everything serious was fixed the same day.
+
+- **The request page could send the original photo** if Send was tapped right after Done in the black-out editor,
+  before the blacked-out picture was ready. Now nothing can be sent, added or removed until it is, and the page behind
+  the editor can't be reached while it is open.
+- **The check page could name a firm on a backdated copy.** Someone who once held a firm's key could date a copy into
+  the firm's paid period. Now a firm's certificate says when Colshare signed it, and the check page names the firm only
+  for documents dated in the week after that and not in the future.
+- **A firm's owner could change by accident.** It was worked out as the person with the oldest device, so replacing the
+  owner's computer passed ownership to an employee. Now it is stored, and only the owner sets the recovery key.
+- **A contact card that came inside a link counted as checked.** Now only a contact card opened directly, a scanned key
+  or compared numbers check a person, and a card can't move a known person to another mailbox.
+
 ## Kept on purpose
 
 These were found and left as they are, for the reasons given.

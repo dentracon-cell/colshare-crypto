@@ -97,7 +97,8 @@ export const textCheie = (publica: string) => `COLSHARE-CHEIE:${publica}`;
 export function citesteCheia(s: string): string | undefined {
   const m = /^COLSHARE-CHEIE:([A-Za-z0-9_-]{87})$/.exec(s.trim());
   try {
-    return m && estePublica(dinB64url(m[1])) ? m[1] : undefined;
+    // Back to its one spelling: the last character's unused bits could otherwise make the right key read as swapped.
+    return m && estePublica(dinB64url(m[1])) ? b64url(dinB64url(m[1])) : undefined;
   } catch {
     return undefined;
   }
@@ -406,12 +407,18 @@ export async function trimitLui(r: Relay, eu: Chei, om: Pick<Om, "casuta" | "jet
 /**
  * Adds the person whose card this is: files them, makes a token for them and sends them this phone's card through
  * theirs (the greeting). A card already used by someone else, or taken back, fails with EroareRelay 403 "jeton", and
- * nothing is kept.
+ * nothing is kept. `dinLink`: the card came inside a link's package, so it is not marked checked: whoever sent the link,
+ * or the relay for a link it e-mailed, chose it (attack test 2026-10-30, P1 and P3). A person already in People is
+ * given back unchanged while the token kept for them still opens their mailbox: a card naming their key with another
+ * mailbox would otherwise send their papers elsewhere (P2). Only once they took this phone off (the token refused) does
+ * a card they gave again, opened straight, move them, as their own signed greeting would.
  */
-export async function adaug(r: Relay, stare: StareOameni, carte: Carte, numeleMeu: string): Promise<Om> {
+export async function adaug(r: Relay, stare: StareOameni, carte: Carte, numeleMeu: string, dinLink = false): Promise<Om> {
   const l = liste(stare), eu = stare.eu!;
   const publica = b64url(carte.publica);
   if (publica === eu.publica) throw new EroareRelay(400, "eu");
+  const fost = l.oameni.find((o) => o.publica === publica);
+  if (fost && (dinLink || await r("casuta-info", { id: fost.casuta, t: fost.jeton }).then(() => true, (e) => !(e instanceof EroareRelay && e.status === 403)))) return fost;
   const { t, j } = await jetonNou(r, eu);
   try {
     await trimitLui(r, await cheile(eu), { ...carte, publica }, { fel: "salut", nume: numeleMeu.slice(0, MAX_NUME), casuta: eu.casuta, jeton: t });
@@ -420,14 +427,13 @@ export async function adaug(r: Relay, stare: StareOameni, carte: Carte, numeleMe
     throw e;
   }
   l.blocati = l.blocati.filter((b) => b.publica !== publica);
-  // The card came to this phone straight, not through the relay: its key is the one its owner showed or sent.
-  const verificat: Verificare = { la: new Date().toISOString(), cum: "carte" };
-  const fost = l.oameni.find((o) => o.publica === publica);
+  // A card opened straight, not through the relay: its key is the one its owner showed or sent.
+  const verificat: Verificare | undefined = dinLink ? undefined : { la: new Date().toISOString(), cum: "carte" };
   if (fost) {
-    Object.assign(fost, { casuta: carte.casuta, jeton: carte.jeton, nume: fost.nume || carte.nume, dela: [...fost.dela, j], verificat: fost.verificat ?? verificat });
+    Object.assign(fost, { casuta: carte.casuta, jeton: carte.jeton, dela: [...fost.dela, j] });
     return fost;
   }
-  const om: Om = { id: b64url(aleator(16)), nume: carte.nume, publica, casuta: carte.casuta, jeton: carte.jeton, dela: [j], creat: new Date().toISOString(), verificat };
+  const om: Om = { id: b64url(aleator(16)), nume: carte.nume, publica, casuta: carte.casuta, jeton: carte.jeton, dela: [j], creat: new Date().toISOString(), ...(verificat ? { verificat } : {}) };
   l.oameni.push(om);
   return om;
 }

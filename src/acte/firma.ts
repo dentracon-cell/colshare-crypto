@@ -42,6 +42,10 @@ export interface Certificat {
   g: number;
   /** Paid until (YYYY-MM-DD). */
   pana: string;
+  /** The day colshare.app signed it (YYYY-MM-DD); none on one signed before 2026-10-30. */
+  semnat?: string;
+  /** Signed for an ask's or a link's page: it names the firm there, never on a proof (V1). */
+  cerere?: true;
 }
 
 const CERT = /^[A-Za-z0-9_-]{20,1200}\.[A-Za-z0-9_-]{86}$/;
@@ -66,8 +70,10 @@ export async function verificCertificat(s: string | undefined, publica?: Uint8Ar
     if (x.v !== 1 || typeof x.f !== "string" || typeof x.c !== "string" || typeof x.t !== "string" || typeof x.k !== "string" || typeof x.p !== "string" || !Number.isInteger(x.g)) return undefined;
     const cheie = dinB64url(x.k);
     if (!estePublica(cheie) || !/^\d{4}-\d{2}-\d{2}$/.test(x.p) || x.p < azi.toISOString().slice(0, 10)) return undefined;
+    if (x.d !== undefined && (typeof x.d !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(x.d))) return undefined;
     if (publica && (publica.length !== cheie.length || publica.some((b, i) => b !== cheie[i]))) return undefined;
-    return { firma: curat(x.f).slice(0, 120), cui: curat(x.c).slice(0, 20), tara: x.t.slice(0, 2), cheie, g: x.g as number, pana: x.p };
+    return { firma: curat(x.f).slice(0, 120), cui: curat(x.c).slice(0, 20), tara: x.t.slice(0, 2), cheie, g: x.g as number, pana: x.p,
+      ...(typeof x.d === "string" ? { semnat: x.d } : {}), ...(x.a === 1 ? { cerere: true as const } : {}) };
   } catch {
     return undefined;
   }
@@ -333,9 +339,12 @@ export const punRecuperarea = async (apel: ApelFirma, loc: Loc, inel: Inel, publ
  */
 export const alCui = (s: { id: string; p?: string }) => s.p ?? `loc:${s.id}`;
 
-/** The owner as the server names it, or, from a server before owners, the person of the oldest device (as core.js does). */
+/**
+ * The owner as the server names it (it may have no device left: the firm then waits for the recovery file), or, from a
+ * server before owners, the person of the oldest device (as core.js does).
+ */
 export function proprietarFirmei(f: Pick<StareFirma, "proprietar" | "scaune">): string | undefined {
-  if (f.proprietar && f.scaune.some((s) => alCui(s) === f.proprietar)) return f.proprietar;
+  if (f.proprietar) return f.proprietar;
   const primul = [...f.scaune].sort((a, b) => a.creat.localeCompare(b.creat))[0];
   return primul ? alCui(primul) : undefined;
 }
@@ -1129,6 +1138,25 @@ export async function deschidFataFirma(p: string | undefined, id: string, cheie:
   } catch {
     return undefined;
   }
+}
+
+/** How many days after colshare.app signed it a certificate names the firm on a receipt or a copy (V1). */
+export const ZILE_CERTIFICAT_DOVADA = 7;
+
+/**
+ * The firm a receipt or a marked copy was made by, for /v/: its certificate checked as above, for the statement's key,
+ * on the statement's day, and only when that day is from the week after colshare.app signed it and not after the day
+ * of the check. The statement's date is the signer's own claim; without these bounds anyone who once held a key of the
+ * firm with its certificate could date a copy into its paid period, for ever (attack test 2026-10-30, V1). A
+ * certificate signed for an ask's page, or one from before 2026-10-30 with no day, names no firm here.
+ */
+export async function firmaDovezii(cert: string | undefined, publica: Uint8Array, data: string, chei: string[] = CHEI_CERTIFICAT, azi = new Date()): Promise<Certificat | undefined> {
+  const ms = Date.parse(data);
+  if (!/^\d{4}-\d{2}-\d{2}/.test(data) || Number.isNaN(ms) || ms > azi.getTime() + 86_400_000) return undefined;
+  const c = await verificCertificat(cert, publica, chei, new Date(ms));
+  if (!c?.semnat || c.cerere) return undefined;
+  const ziua = data.slice(0, 10);
+  return ziua >= c.semnat && ms < Date.parse(c.semnat) + (ZILE_CERTIFICAT_DOVADA + 1) * 86_400_000 ? c : undefined;
 }
 
 /** Another firm found by its tax ID: its certificate checked, its inbox. Undefined when it has no Colshare Business. */

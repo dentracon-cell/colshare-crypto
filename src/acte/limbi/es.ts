@@ -691,6 +691,7 @@ export const ES: Record<Cheie, string> = {
   "dovada.firma-verificata": "Verificada por Colshare: {firma}, número fiscal {cui}. Este recibo está firmado con la clave de esa empresa.",
   "dovada.firma-copie": "Una copia hecha por {firma}, número fiscal {cui}, verificada por Colshare. Está firmada con la clave de esa empresa.",
   "dovada.firma-fisier": "El PDF del recibo nombra a la empresa tal como Colshare la verificó: elígelo abajo.",
+  "dovada.copie-cine": "Quién hizo esta copia no se comprueba solo con el código: cualquiera puede crear una clave y escribir cualquier nombre en una copia. La copia de una empresa nombra a la empresa tal como Colshare la verificó cuando eliges su PDF abajo.",
   "dovada.camp.neverificat": "sin verificar",
   "dovada.nu-tine": "La firma no es válida: las palabras se cambiaron o el código está dañado.",
   "dovada.nedovedit": "Los datos de abajo no están probados.",

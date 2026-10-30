@@ -72,10 +72,11 @@ const fata = (f?: FataLink) => {
 /**
  * Text from outside (a name or note typed into a link, an ask's words, a firm's name) without control characters or
  * the marks that turn the direction of the text after them (security audit 2026-10-25, L2): a name could otherwise
- * draw "names are not checked" backwards, or fake where it ends.
+ * draw "names are not checked" backwards, or fake where it ends. Zero-width and invisible characters go too (attack test
+ * 2026-10-30, V2).
  */
 // eslint-disable-next-line no-control-regex
-export const curat = (s: string) => s.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "");
+export const curat = (s: string) => s.replace(/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b\u200e\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, "");
 
 /**
  * A note on an ask (the firm's to the client, the client's back): as `curat`, but its line breaks stay, at most one

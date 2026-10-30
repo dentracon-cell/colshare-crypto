@@ -66,7 +66,7 @@ export function numeSigur(nume: string, tip: string): string {
 }
 
 /** The longest card a package carries (a card link is about 230 characters). */
-const MAX_CARTE = 400;
+const MAX_CARTE = 700;
 
 export function impacheteaza(p: Pachet): Uint8Array {
   if (!p.fisiere.length || p.fisiere.length > MAX_FISIERE) throw new Error("pachet: număr de fișiere greșit");

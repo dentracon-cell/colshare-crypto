@@ -72,6 +72,11 @@ let altDeschis = false;
 let numeTrimitator = "";
 /** What the client writes to the firm with the papers (a firm's ask only: decisions.md 2026-10-28, "Notes on an ask"). */
 let notaClient = "";
+/**
+ * A page being blacked out or a PDF being turned into pages: until it is done nothing is sent, added or removed, so the
+ * original can't leave before its blacked-out picture replaces it (attack test 2026-10-30, N1 and N3).
+ */
+let ocupat = false;
 /** A firm's ask (its short link): the firm reads a note sent with the papers; a person's ask has no field for one. */
 const DE_LA_FIRMA = adresa?.fel === "cerere-firma";
 
@@ -176,7 +181,7 @@ function slotHtml(s: { nume: string; piese: Piesa[] }, i: number): string {
 /** Files into a slot (chosen, photographed or dropped), then the page drawn again. */
 async function adaugInSlot(i: number, fisiere: Iterable<File>): Promise<void> {
   const s = sloturi[i];
-  if (!s) return;
+  if (!s || ocupat) return;
   for (const f of fisiere) {
     const p = await piesaDin(f).catch(() => undefined);
     if (p) s.piese.push(p);
@@ -227,6 +232,7 @@ function formular(mesaj?: string) {
     </div>
   </div>${invit}`;
   umplute = new Set(sloturi.map((s, i) => (s.piese.length ? i : -1)).filter((i) => i >= 0));
+  if (ocupat) for (const x of el.querySelectorAll<HTMLButtonElement | HTMLInputElement>(".cerere-acte button, .cerere-acte input")) x.disabled = true;
   for (const x of el.querySelectorAll<HTMLInputElement>("input[data-slot]")) {
     x.addEventListener("change", () => void adaugInSlot(Number(x.dataset.slot), x.files ?? []));
   }
@@ -250,6 +256,7 @@ function formular(mesaj?: string) {
   }
   for (const b of el.querySelectorAll<HTMLButtonElement>("[data-scot]")) {
     b.addEventListener("click", () => {
+      if (ocupat) return;
       const [i, j] = b.dataset.scot!.split(":").map(Number);
       const [p] = sloturi[i].piese.splice(j, 1);
       if (p?.url) URL.revokeObjectURL(p.url);
@@ -278,9 +285,12 @@ function formular(mesaj?: string) {
  */
 async function ascundIn(i: number, j: number): Promise<void> {
   const p = sloturi[i]?.piese[j];
-  if (!p || p.tip !== "jpeg") return;
+  if (!p || p.tip !== "jpeg" || ocupat) return;
+  ocupat = true;
+  formular();
   p.orig ??= new Blob([p.date as BlobPart], { type: "image/jpeg" });
-  const img = await createImageBitmap(p.orig);
+  const img = await createImageBitmap(p.orig).catch(() => undefined);
+  if (!img) { ocupat = false; formular(); return; }
   try {
     const r = await editezNegru(img, p.manual ?? [], p.mrz ?? false, {
       titlu: t("a.ascund.titlu"), text: t("a.ascund.text"), mrz: t("copie.mrz"), anulez: t("copie.anulez"), gata: t("a.ascund.gata"), renunt: t("a.ascund.renunt"),
@@ -292,8 +302,9 @@ async function ascundIn(i: number, j: number): Promise<void> {
     Object.assign(p, { date: nou.date, w: nou.w, h: nou.h, url: URL.createObjectURL(nou.blob), manual: r.manual, mrz: r.mrz, ascunse: zone.length });
   } finally {
     img.close();
+    ocupat = false;
+    formular();
   }
-  formular();
 }
 
 /** pdf.js, from the desk's files on this site, the first time a PDF is turned into pages here. */
@@ -313,7 +324,8 @@ const PAGINI_PDF = 30;
 /** A slot's PDFs turned into pages (pictures), each of which can then have part of it hidden. */
 async function inPagini(i: number): Promise<void> {
   const s = sloturi[i];
-  if (!s) return;
+  if (!s || ocupat) return;
+  ocupat = true;
   formular(t("a.pdf.lucrez"));
   try {
     const piese: Piesa[] = [];
@@ -329,9 +341,11 @@ async function inPagini(i: number): Promise<void> {
       piese.push(...pagini);
     }
     s.piese = piese;
+    ocupat = false;
     formular();
   } catch (e) {
     console.warn(e);
+    ocupat = false;
     formular(t("a.pdf.eroare"));
   }
 }
@@ -353,7 +367,7 @@ function laSlot(i: number): void {
 }
 
 async function trimit() {
-  if (!adresa || adresa.fel !== "cerere") return;
+  if (!adresa || adresa.fel !== "cerere" || ocupat) return;
   const fisiere = fisiereDeTrimis();
   if (!fisiere.length) { formular(t("a.gol")); return; }
   const de = numeTrimitator.trim();

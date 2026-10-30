@@ -5,7 +5,7 @@
 import aplicatie from "./aplicatie.json";
 import { codCheie, verific, verificFisier, type DovadaCitita } from "./dovada.ts";
 import { campuriDeclaratie } from "./dovada-text.ts";
-import { verificCertificat, type Certificat } from "./firma.ts";
+import { firmaDovezii, type Certificat } from "./firma.ts";
 import { piciorHtml } from "./legal.ts";
 import { data, limbaTelefonului, punLimba, t, type Cheie } from "./limba.ts";
 import { marcaSvg } from "./sigiliu.ts";
@@ -22,7 +22,8 @@ const tt = (k: Cheie, v?: Record<string, string | number>) => esc(t(k, v));
  * colshare.app signed for the key the receipt is signed with, valid on the receipt's day, which only the receipt's PDF
  * carries. From the QR code alone, the firm's name is shown as the receipt states it, marked not checked (attack test
  * 2026-10-29, K1). A marked copy a firm sent (2026-10-30) carries the certificate the same way, and is named as that
- * firm's copy.
+ * firm's copy. From the code alone a copy says who made it nowhere checked: anyone can write a firm's name on one (attack
+ * test 2026-10-30, V2).
  */
 async function rezultat(v: DovadaCitita, firma?: Certificat): Promise<string> {
   const deFirma = v.d.fel === "primire" || v.d.fel === "trimitere";
@@ -34,6 +35,7 @@ async function rezultat(v: DovadaCitita, firma?: Certificat): Promise<string> {
     <p class="banda ${v.tine ? "ok" : "rau"}" role="status">${tt(v.tine ? "dovada.tine" : "dovada.nu-tine")}</p>
     ${v.tine && firma ? `<p class="banda ok">${tt(v.d.fel === "copie" ? "dovada.firma-copie" : "dovada.firma-verificata", { firma: firma.firma, cui: firma.cui })}</p>` : ""}
     ${v.tine && deFirma && !firma ? `<p class="mic">${tt("dovada.firma-nedovedita")} ${tt("dovada.firma-fisier")}</p>` : ""}
+    ${v.tine && v.d.fel === "copie" && !firma ? `<p class="mic">${tt("dovada.copie-cine")}</p>` : ""}
     ${v.tine ? "" : `<p class="eticheta nedovedit-titlu">${tt("dovada.nedovedit")}</p>`}
     <ul class="campuri${v.tine ? "" : " nedovedit"}">${campuri.map(([k, x]) => `<li><span class="eticheta">${esc(k)}</span><span class="valoare">${esc(x)}</span></li>`).join("")}</ul>
     <p class="mic">${tt("dovada.cheie", { cod: await codCheie(v.publica) })}</p></div>`;
@@ -55,8 +57,8 @@ async function arata(): Promise<void> {
     if (!f) return;
     const r = await verificFisier(new Uint8Array(await f.arrayBuffer()));
     // The firm as colshare.app's certificate names it: only for a file exactly as signed, and only when the certificate
-    // is for the receipt's own key and was valid on the receipt's day.
-    const firma = r.stare === "bun" && r.certificat ? await verificCertificat(r.certificat, r.dovada.publica, undefined, new Date(r.dovada.d.data)) : undefined;
+    // is for the receipt's own key and the receipt is dated in the week after it was signed (./firma.ts firmaDovezii).
+    const firma = r.stare === "bun" && r.certificat ? await firmaDovezii(r.certificat, r.dovada.publica, r.dovada.d.data) : undefined;
     out.innerHTML = r.stare === "fara" ? `<p class="banda rau">${tt("v.fisier.fara")}</p>`
       : `<p class="banda ${r.stare === "bun" ? "ok" : "rau"}">${r.stare === "bun" ? tt("v.fisier.bun", { data: data(r.dovada.d.data) }) : tt("v.fisier.schimbat")}</p>${r.dovada.dovada === v?.dovada && !firma ? "" : await rezultat(r.dovada, firma)}`;
   });

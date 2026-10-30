@@ -691,6 +691,7 @@ export const PL: Record<Cheie, string> = {
   "dovada.firma-verificata": "Sprawdzona przez Colshare: {firma}, NIP {cui}. To potwierdzenie jest podpisane kluczem tej firmy.",
   "dovada.firma-copie": "Kopia wykonana przez {firma}, NIP {cui}, sprawdzona przez Colshare. Jest podpisana kluczem tej firmy.",
   "dovada.firma-fisier": "PDF potwierdzenia podaje firmę tak, jak sprawdził ją Colshare: można go wybrać poniżej.",
+  "dovada.copie-cine": "Kto wykonał tę kopię, nie jest sprawdzane na podstawie samego kodu: każdy może utworzyć klucz i wpisać na kopii dowolną nazwę. Kopia firmy podaje firmę tak, jak sprawdził ją Colshare, po wybraniu jej pliku PDF poniżej.",
   "dovada.camp.neverificat": "niesprawdzone",
   "dovada.nu-tine": "Podpis jest nieważny: słowa zostały zmienione albo kod jest uszkodzony.",
   "dovada.nedovedit": "Poniższe dane nie są potwierdzone.",

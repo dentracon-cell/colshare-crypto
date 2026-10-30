@@ -691,6 +691,7 @@ export const NL: Record<Cheie, string> = {
   "dovada.firma-verificata": "Gecontroleerd door Colshare: {firma}, btw-nummer {cui}. Dit ontvangstbewijs is ondertekend met de sleutel van dat bedrijf.",
   "dovada.firma-copie": "Een kopie gemaakt door {firma}, btw-nummer {cui}, gecontroleerd door Colshare. Ze is ondertekend met de sleutel van dat bedrijf.",
   "dovada.firma-fisier": "De pdf van het ontvangstbewijs noemt het bedrijf zoals Colshare het heeft gecontroleerd: kies hem hieronder.",
+  "dovada.copie-cine": "Wie deze kopie heeft gemaakt, wordt niet gecontroleerd met de code alleen: iedereen kan een sleutel maken en elke naam op een kopie zetten. De kopie van een bedrijf noemt het bedrijf zoals Colshare het heeft gecontroleerd zodra je hieronder de pdf kiest.",
   "dovada.camp.neverificat": "niet gecontroleerd",
   "dovada.nu-tine": "De handtekening klopt niet: de woorden zijn gewijzigd of de code is beschadigd.",
   "dovada.nedovedit": "De gegevens hieronder zijn niet bewezen.",

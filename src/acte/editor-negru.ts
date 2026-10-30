@@ -95,6 +95,9 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
   const sus = document.documentElement.style.overflow;
   document.documentElement.style.overflow = "hidden";
   const inapoi = document.activeElement as HTMLElement | null;
+  // Nothing behind can be reached by Tab or a screen reader either (attack test 2026-10-30, N2).
+  const blocate = [...document.body.children].filter((e): e is HTMLElement => e !== strat && e instanceof HTMLElement && !e.inert);
+  for (const b of blocate) b.inert = true;
   requestAnimationFrame(deseneaza);
   deseneaza();
   strat.querySelector<HTMLButtonElement>(".editor-gata")!.focus();
@@ -102,12 +105,14 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
     const inchid = (r: { manual: Zona[]; mrz: boolean } | undefined) => {
       removeEventListener("resize", laRedim);
       document.documentElement.style.overflow = sus;
+      for (const b of blocate) b.inert = false;
       strat.remove();
       inapoi?.focus();
       ok(r);
     };
     strat.querySelector(".editor-gata")!.addEventListener("click", () => inchid({ manual, mrz }));
     strat.querySelector(".editor-renunt")!.addEventListener("click", () => inchid(undefined));
-    strat.addEventListener("keydown", (e) => { if (e.key === "Escape") inchid(undefined); });
+    // Escape never throws away boxes drawn: with any, it is Done; with none, it cancels (attack test 2026-10-30, N4).
+    strat.addEventListener("keydown", (e) => { if (e.key === "Escape") inchid(manual.length || mrz ? { manual, mrz } : undefined); });
   });
 }
