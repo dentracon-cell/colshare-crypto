@@ -157,6 +157,8 @@ const caRelay = (apel: ApelFirma, loc: Loc): Relay => (op, corp) => apel(op, cor
 
 /** What the server says of the firm to a seat (core.js despre). */
 export interface StareFirma {
+  /** The firm's owner, as alCui gives it (none from a server before owners). */
+  proprietar?: string;
   firma: string;
   cui: string;
   tara: string;
@@ -324,6 +326,28 @@ export async function deschidPentruRecuperare(r: CheieRecuperare, m: string): Pr
 /** The firm's recovery public key set on the licence; `inlocuiesc` to replace one set before. */
 export const punRecuperarea = async (apel: ApelFirma, loc: Loc, inel: Inel, publica: string, inlocuiesc = false) =>
   apel("recuperare-pune", { cheie: publica, semn: await semnezRecuperarea(inel, publica), ...(inlocuiesc ? { inlocuiesc: true } : {}) }, loc);
+
+/**
+ * The firm's owner (colshare-web/api/_firme/core.js proprietarDin, decisions.md 2026-10-30 "A firm has an owner"): a
+ * person id, or "loc:<seat id>" for a seat that is not a person yet. What the seat `s` is, in the same terms.
+ */
+export const alCui = (s: { id: string; p?: string }) => s.p ?? `loc:${s.id}`;
+
+/** The owner as the server names it, or, from a server before owners, the person of the oldest device (as core.js does). */
+export function proprietarFirmei(f: Pick<StareFirma, "proprietar" | "scaune">): string | undefined {
+  if (f.proprietar && f.scaune.some((s) => alCui(s) === f.proprietar)) return f.proprietar;
+  const primul = [...f.scaune].sort((a, b) => a.creat.localeCompare(b.creat))[0];
+  return primul ? alCui(primul) : undefined;
+}
+
+/** The owner hands the firm over to another of its people (`persoana`, as alCui gives it). */
+export const predauFirma = (apel: ApelFirma, loc: Loc, persoana: string) => apel("proprietar-preda", { persoana }, loc);
+
+/** This device's person takes the firm over with its recovery file, signed over a fresh nonce and the moment. */
+export async function iauFirmaCuRecuperarea(apel: ApelFirma, loc: Loc, rec: CheieRecuperare, ceas = () => Date.now()): Promise<void> {
+  const r = b64url(aleator(16)), la = ceas();
+  await apel("proprietar-recuperare", { r, la, sigRecuperare: await semnez(rec.privata, `colshare-proprietar-recuperare-v1\n${loc.id}\n${r}\n${la}`) }, loc);
+}
 
 /** Two rings as one: every generation once, in order. For rings this device made or the firm's recovery file holds. */
 export const unescInele = (a: Inel, b: Inel): Inel => ({ chei: [...new Map([...a.chei, ...b.chei].map((k) => [k.g, k])).values()].sort((x, y) => x.g - y.g) });

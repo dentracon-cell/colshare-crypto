@@ -95,6 +95,14 @@ it already opened. Now a link only downloads with a token derived from its key, 
 the server keeps only a fingerprint of that token. A wrong or missing key is refused, and the link stays for the right
 one.
 
+## Also fixed: who runs a firm
+
+Any device in a Colshare Business firm could remove any other, the owner's included. Since 30 October a firm has an
+owner, the person who activated the licence, on all their devices. Only the owner adds people, removes other people's
+devices and replaces the firm's recovery key. The owner can hand the firm over, and if the owner is gone, a device can
+take the firm over with the firm's recovery file. Every device still holds the firm's key, because it needs it to open
+documents. The owner decides who joins and who is removed.
+
 ## Kept on purpose
 
 These were found and left as they are, for the reasons given.
@@ -105,8 +113,6 @@ These were found and left as they are, for the reasons given.
   warns against approving a code someone asked you to scan.
 - **A link sent by e-mail through Colshare passes its key through our server** on its way to the recipient. It is
   stated in the privacy notice. Send the link yourself to avoid it.
-- **Any device in a firm can remove any other, the owner's included.** Small firms share admin work. Removal rotates
-  the keys, and handing someone's documents over still needs their consent.
 - **A wildcard DNS record points unused subdomains at our host.** It's the host's default record and can't be
   deleted. Another account can't take a subdomain without proving it owns the domain.
 
