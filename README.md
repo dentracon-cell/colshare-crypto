@@ -113,7 +113,7 @@ redacted PDF has no text layer and none of the hidden numbers in its bytes. They
 
 ## Security tests
 
-What we tested, what we found and what we fixed is in [SECURITY-TESTS.md](SECURITY-TESTS.md). Those were self-tests,
+What we protect, from whom and where to look is in [THREAT-MODEL.md](THREAT-MODEL.md). What we tested, what we found and what we fixed is in [SECURITY-TESTS.md](SECURITY-TESTS.md). Those were self-tests,
 not an independent audit.
 
 ## Reporting a problem
