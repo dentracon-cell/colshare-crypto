@@ -15,7 +15,8 @@ yourself and check that the site serves exactly that code (below).
 **Send links that open once.** A document is encrypted in the browser or app with AES-256-GCM under a fresh 32-byte
 key. The encrypted bytes go to the relay, and the link is `https://colshare.app/p/#<id>.<key>`. The key sits after the
 `#`, which browsers never send to a server, so the relay only ever holds bytes it cannot open. Loading the link page
-does not use the link up. It is opened, and then deleted by the relay, only when the recipient taps the open button.
+does not use the link up, and the relay serves the chunks only with a token derived from the key (`tokenLink`), so
+a link's id alone can neither read it nor use it up. It is opened, and then deleted by the relay, only when the recipient taps the open button.
 See `src/acte/link.ts`.
 
 **Asks and firms.** Someone who asks for documents (a person, or a firm through Colshare Business) has a P-256 key pair,

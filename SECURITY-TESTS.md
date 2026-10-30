@@ -87,6 +87,14 @@ the firm's certificate, signed by Colshare. The check page names the firm as che
 for the exact key the receipt is signed with and was valid on the receipt's day. From the QR code alone, which has no
 room for the certificate, the firm's name is marked "not checked". The check still runs entirely in your browser.
 
+## Also fixed: a link's id alone
+
+Every request for a link carries its id, so the id can show up in places like hosting logs. Before 30 October, anyone
+who had only the id could download the link's encrypted chunks and use the link up, so the real recipient would find
+it already opened. Now a link only downloads with a token derived from its key, which never leaves the browser, and
+the server keeps only a fingerprint of that token. A wrong or missing key is refused, and the link stays for the right
+one.
+
 ## Kept on purpose
 
 These were found and left as they are, for the reasons given.
@@ -95,9 +103,8 @@ These were found and left as they are, for the reasons given.
   answer is cached so it can't be used to flood the business register with lookups.
 - **An invitation link works like a password until it is approved.** The approving device names the new device and
   warns against approving a code someone asked you to scan.
-- **A link's id alone can use it up, and a link sent by e-mail passes its key through our server.** Using a link up
-  only destroys it, it never reveals it. The e-mail case is stated in the privacy notice. Send the link yourself to
-  avoid it.
+- **A link sent by e-mail through Colshare passes its key through our server** on its way to the recipient. It is
+  stated in the privacy notice. Send the link yourself to avoid it.
 - **Any device in a firm can remove any other, the owner's included.** Small firms share admin work. Removal rotates
   the keys, and handing someone's documents over still needs their consent.
 - **A wildcard DNS record points unused subdomains at our host.** It's the host's default record and can't be

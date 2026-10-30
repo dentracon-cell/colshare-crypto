@@ -229,18 +229,34 @@ export interface LinkFacut {
   adresa: string;
 }
 
+/**
+ * What the relay asks for before it serves a link's chunks: the SHA-256 of a label and the link's key. The key never
+ * leaves the browser and the relay keeps only this token's hash, so a link's id alone (in a log, say) can't use the
+ * link up (attack test 2026-10-29, K4). The token tells nothing of the key.
+ */
+export async function tokenLink(cheie: Uint8Array): Promise<string> {
+  return b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", lipeste(new TextEncoder().encode("colshare-link-ia-v1\n"), cheie) as BufferSource)));
+}
+
 /** Encrypts the package, sends it up and gives the link. */
 export async function facLink(r: Relay, domeniu: string, pachet: Uint8Array, progres?: (f: number, cifru?: string) => void, f?: FataLink): Promise<LinkFacut> {
   const id = b64url(aleator(16)), s = b64url(aleator(32)), cheie = aleator(32);
   const sigilat = await cripteazaLink(cheie, pachet);
-  await urca(r, "link-bucata", { id, s }, sigilat, progres);
+  await urca(r, "link-bucata", { id, s, t: await tokenLink(cheie) }, sigilat, progres);
   return { id, s, adresa: adresaLink(domeniu, id, cheie, f) };
 }
 
 /** Opens a send link: fetches it, decrypts it, tells the relay to delete it. Throws EroareRelay (410 opened, 404 gone). */
 export async function deschidLink(r: Relay, id: string, cheie: Uint8Array, progres?: (f: number) => void): Promise<Uint8Array> {
   const { n } = await r<{ n: number }>("link-info", { id });
-  const sigilat = await coboara(r, "link-ia", { id }, n, progres);
+  let sigilat: Uint8Array;
+  try {
+    sigilat = await coboara(r, "link-ia", { id, t: await tokenLink(cheie) }, n, progres);
+  } catch (e) {
+    // The relay refuses a key that isn't the link's, as the decryption would: the link stays for the right one.
+    if (e instanceof EroareRelay && e.status === 403) throw new EroareRelay(422, "cheie");
+    throw e;
+  }
   const pachet = await decripteazaLink(cheie, sigilat);
   if (!pachet) throw new EroareRelay(422, "cheie");
   // Deleted now; if this call fails, the relay deletes it fifteen minutes after the last chunk anyway.
