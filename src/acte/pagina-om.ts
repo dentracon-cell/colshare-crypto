@@ -32,12 +32,15 @@ if (!carte) {
   const peCalculator = matchMedia("(pointer: fine)").matches;
   const play = cuPlay();
   const copiez = `<button class="buton-ton copiez" id="copiez">${tt("trimit.copiez")}</button>`;
-  el.innerHTML = `<h1>${tt("o.titlu")}</h1><p class="titlu-pachet">${tt("o.de", { nume: carte.nume })}</p>
+  // On a computer the page is wide (the band's wordmark moves with it) and the QR code stands beside the text, so the
+  // whole card fits one screen without scrolling (2026-10-30); a narrow window stacks them as on a phone.
+  if (peCalculator) el.closest(".pagina-link")?.classList.add("lata");
+  el.innerHTML = `<div class="o-carte"><div class="o-text"><h1>${tt("o.titlu")}</h1><p class="titlu-pachet">${tt("o.de", { nume: carte.nume })}</p>
     <p class="o-invit">${frazaInvitatie("a.invit")}</p>
     ${play ? `<a class="buton-sigiliu" href="${PLAY}" target="_blank" rel="noopener">${tt("invit.play")}</a><p class="mic">${tt("o.dupa")}</p>` : ""}
     <p>${tt("o.text")}</p>
-    ${peCalculator ? `<div class="qr" role="img" aria-label="${tt("o.qr")}">${svgQr(adresa, 220)}</div><p class="mic">${tt("o.qr")}</p>` : ""}
-    ${copiez}${play ? "" : `<p class="mic">${tt("o.dupa")}</p>`}${piciorHtml(true)}`;
+    ${copiez}${play ? "" : `<p class="mic">${tt("o.dupa")}</p>`}</div>
+    ${peCalculator ? `<div class="o-qr"><div class="qr" role="img" aria-label="${tt("o.qr")}">${svgQr(adresa, 220)}</div><p class="mic">${tt("o.qr")}</p></div>` : ""}</div>${piciorHtml(true)}`;
   document.getElementById("copiez")!.addEventListener("click", async (e) => {
     const b = e.currentTarget as HTMLButtonElement;
     try {
