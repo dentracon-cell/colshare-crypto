@@ -34,6 +34,11 @@ export interface Pachet {
   coleg?: { p: string; client: string; titlu: string; rand: string; s: string };
   /** The client's note to the firm with an answer to a firm's ask (decisions.md 2026-10-28, "Notes on an ask"). */
   nota?: string;
+  /**
+   * The sender's People card (./oameni.ts adresaCarte) on a send link, when they ticked it (decisions.md 2026-10-30,
+   * "A link can carry the sender's card"): sealed with the link's key like the rest, so the relay can't swap it.
+   */
+  carte?: string;
   fisiere: FisierPachet[];
 }
 
@@ -44,6 +49,7 @@ interface Antet {
   o?: string;
   f?: { c: string; s: string };
   c?: { p: string; client: string; titlu: string; rand: string; s: string };
+  k?: string;
   fisiere: { nume: string; tip: string; octeti: number }[];
 }
 
@@ -59,11 +65,15 @@ export function numeSigur(nume: string, tip: string): string {
   return n;
 }
 
+/** The longest card a package carries (a card link is about 230 characters). */
+const MAX_CARTE = 400;
+
 export function impacheteaza(p: Pachet): Uint8Array {
   if (!p.fisiere.length || p.fisiere.length > MAX_FISIERE) throw new Error("pachet: număr de fișiere greșit");
   const antet: Antet = {
     v: 1, ...(p.titlu ? { titlu: p.titlu.slice(0, 300) } : {}), ...(p.de ? { de: p.de.slice(0, 120) } : {}), ...(p.nota && curatNota(p.nota) ? { o: curatNota(p.nota) } : {}), ...(p.firma ? { f: { c: p.firma.c, s: p.firma.s } } : {}),
     ...(p.coleg ? { c: { p: p.coleg.p, client: p.coleg.client.slice(0, 120), titlu: p.coleg.titlu.slice(0, 200), rand: p.coleg.rand, s: p.coleg.s } } : {}),
+    ...(p.carte && p.carte.length <= MAX_CARTE ? { k: p.carte } : {}),
     fisiere: p.fisiere.map((f) => {
       if (!TIPURI.test(f.tip)) throw new Error("pachet: tip de fișier greșit");
       return { nume: numeSigur(f.nume, f.tip), tip: f.tip, octeti: f.date.length };
@@ -99,6 +109,8 @@ export function despacheteaza(b: Uint8Array): Pachet {
   const cm = c && [c.p, c.client, c.titlu, c.rand, c.s].every((x) => typeof x === "string") && c.client.length <= 120 && c.titlu.length <= 200 && c.p.length < 64 && c.rand.length < 64 && c.s.length < 200
     ? { coleg: { p: c.p, client: curat(c.client), titlu: curat(c.titlu), rand: c.rand, s: c.s } } : {};
   const nota = typeof antet.o === "string" ? curatNota(antet.o) : "";
+  // The card is read as a card by whoever offers it (./oameni.ts citesteCarte); here only its size is bounded.
+  const km = typeof antet.k === "string" && antet.k.length <= MAX_CARTE ? { carte: antet.k } : {};
   // The title and the sender's name without control or direction characters, as the link's front (./link.ts curat).
-  return { ...(typeof antet.titlu === "string" ? { titlu: curat(antet.titlu) } : {}), ...(typeof antet.de === "string" ? { de: curat(antet.de) } : {}), ...(nota ? { nota } : {}), ...fm, ...cm, fisiere };
+  return { ...(typeof antet.titlu === "string" ? { titlu: curat(antet.titlu) } : {}), ...(typeof antet.de === "string" ? { de: curat(antet.de) } : {}), ...(nota ? { nota } : {}), ...fm, ...cm, ...km, fisiere };
 }

@@ -75,6 +75,50 @@ export interface Om {
   podea?: string;
   /** When their newest greeting was sent: an older one changes nothing. */
   salutLa?: string;
+  /** How this phone knows the key is theirs, and since when (Verificare). None: it came through the relay, unchecked. */
+  verificat?: Verificare;
+}
+
+/**
+ * How a person's key was checked (decisions.md 2026-10-30, "People are checked by a scan"): their card came straight to
+ * this phone ("carte": scanned, or a contact link they sent outside Colshare), their key's code was scanned here
+ * ("scanat"), or the safety code was compared by eye ("cod"). A key that comes only through the relay, as a greeting
+ * does, is unchecked: the relay could have put its own there.
+ */
+export interface Verificare {
+  la: string;
+  cum: "carte" | "scanat" | "cod";
+}
+
+/** What a phone's key QR code says (People › a person › Show my code): the key alone, nothing secret. */
+export const textCheie = (publica: string) => `COLSHARE-CHEIE:${publica}`;
+
+/** A key QR code read back: the key (b64url), or undefined for anything else. */
+export function citesteCheia(s: string): string | undefined {
+  const m = /^COLSHARE-CHEIE:([A-Za-z0-9_-]{87})$/.exec(s.trim());
+  try {
+    return m && estePublica(dinB64url(m[1])) ? m[1] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A key scanned off a person's phone, checked against the one kept for them: "ok" marks them checked; "alta" is another
+ * key, so someone swapped one of the two (nothing is changed).
+ */
+export function verificCuCheia(stare: StareOameni, id: string, cheie: string, acum = new Date()): "ok" | "alta" | undefined {
+  const om = liste(stare).oameni.find((o) => o.id === id);
+  if (!om) return undefined;
+  if (om.publica !== cheie) return "alta";
+  om.verificat = { la: acum.toISOString(), cum: "scanat" };
+  return "ok";
+}
+
+/** The safety code compared by eye and found the same on both phones. */
+export function verificCuCodul(stare: StareOameni, id: string, acum = new Date()): void {
+  const om = liste(stare).oameni.find((o) => o.id === id);
+  if (om && !om.verificat) om.verificat = { la: acum.toISOString(), cum: "cod" };
 }
 
 /** Relay items remembered per person against replays. */
@@ -376,12 +420,14 @@ export async function adaug(r: Relay, stare: StareOameni, carte: Carte, numeleMe
     throw e;
   }
   l.blocati = l.blocati.filter((b) => b.publica !== publica);
+  // The card came to this phone straight, not through the relay: its key is the one its owner showed or sent.
+  const verificat: Verificare = { la: new Date().toISOString(), cum: "carte" };
   const fost = l.oameni.find((o) => o.publica === publica);
   if (fost) {
-    Object.assign(fost, { casuta: carte.casuta, jeton: carte.jeton, nume: fost.nume || carte.nume, dela: [...fost.dela, j] });
+    Object.assign(fost, { casuta: carte.casuta, jeton: carte.jeton, nume: fost.nume || carte.nume, dela: [...fost.dela, j], verificat: fost.verificat ?? verificat });
     return fost;
   }
-  const om: Om = { id: b64url(aleator(16)), nume: carte.nume, publica, casuta: carte.casuta, jeton: carte.jeton, dela: [j], creat: new Date().toISOString() };
+  const om: Om = { id: b64url(aleator(16)), nume: carte.nume, publica, casuta: carte.casuta, jeton: carte.jeton, dela: [j], creat: new Date().toISOString(), verificat };
   l.oameni.push(om);
   return om;
 }

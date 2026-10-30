@@ -5,6 +5,7 @@ import aplicatie from "./aplicatie.json";
 import { marcaSvg } from "./sigiliu.ts";
 import { punLimba, limbaTelefonului, t, type Cheie } from "./limba.ts";
 import { citesteCarte } from "./oameni.ts";
+import { svgQr } from "../core/qr.ts";
 import { invitatie } from "./lansare.ts";
 import { piciorHtml } from "./legal.ts";
 
@@ -24,8 +25,12 @@ document.title = `${t("o.titlu")} · ${aplicatie.nume}`;
 if (!carte) {
   el.innerHTML = `<h1>${tt("o.titlu")}</h1><p>${tt("o.fara-carte")}</p>${invitatie("a.invit")}${piciorHtml(true)}`;
 } else {
+  // On a computer (a fine pointer), the card as a QR code, to carry it to the phone with its camera (2026-10-30).
+  const peCalculator = matchMedia("(pointer: fine)").matches;
   el.innerHTML = `<h1>${tt("o.titlu")}</h1><p class="titlu-pachet">${tt("o.de", { nume: carte.nume })}</p><p>${tt("o.text")}</p>
-    <button class="buton plin mare" id="copiez">${tt("trimit.copiez")}</button>${invitatie("a.invit")}${piciorHtml(true)}`;
+    ${peCalculator ? `<div class="qr" role="img" aria-label="${tt("o.qr")}">${svgQr(adresa, 220)}</div><p class="mic">${tt("o.qr")}</p>` : ""}
+    <button class="buton ${peCalculator ? "contur" : "plin"} mare" id="copiez">${tt("trimit.copiez")}</button>
+    <p class="mic">${tt("o.dupa")}</p>${invitatie("a.invit")}${piciorHtml(true)}`;
   document.getElementById("copiez")!.addEventListener("click", async (e) => {
     const b = e.currentTarget as HTMLButtonElement;
     try {
