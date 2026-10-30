@@ -13,21 +13,22 @@ import { marcaSvg, sigiliuSvg } from "./sigiliu.ts";
  * The band above the page, across the window: the wordmark over the ciphertext field (the desk's lock and the app have
  * it; decisions.md 2026-10-25, "The link pages' band is the cipher"), and the engraving's seal at the right, without its
  * hatch. `lata`: the
- * page beneath is laid out wide on a computer (the ask page's two columns).
+ * page beneath is laid out wide on a computer (the ask page's two columns). `faraSigiliu`: the band keeps no seal,
+ * because the page lays it behind its own content (the card page, sigiliuInFundal below).
  */
-export function montezBanda(lata = false): void {
+export function montezBanda(lata = false, faraSigiliu = false): void {
   const main = document.querySelector<HTMLElement>(".pagina-link");
   if (!main) return;
   document.getElementById("marca")?.remove();
   if (lata) main.classList.add("lata");
   const b = document.createElement("header");
   b.className = "banda-link";
-  b.innerHTML = `<canvas class="banda-cifru" aria-hidden="true"></canvas><canvas aria-hidden="true"></canvas><span class="marca">${marcaSvg(38, aplicatie.nume)}</span>`;
+  b.innerHTML = `<canvas class="banda-cifru" aria-hidden="true"></canvas>${faraSigiliu ? "" : `<canvas aria-hidden="true"></canvas>`}<span class="marca">${marcaSvg(38, aplicatie.nume)}</span>`;
   document.body.prepend(b);
   const [cc, c] = b.querySelectorAll("canvas");
   const optiuni = { x: 0.86, y: 0.56, r: 0.42, fond: 0 };
   let opresteC = cifruFond(cc, { umple: !faraMiscare(), alfa: 0.16 });
-  let opreste = gravura(c, { ...optiuni, deseneaza: !faraMiscare() });
+  let opreste = c ? gravura(c, { ...optiuni, deseneaza: !faraMiscare() }) : () => {};
   // Redrawn whole when the window's width changes enough to matter (a phone turned, a window resized).
   let latime = innerWidth;
   addEventListener("resize", () => {
@@ -35,7 +36,38 @@ export function montezBanda(lata = false): void {
     latime = innerWidth;
     opreste(); opresteC();
     opresteC = cifruFond(cc, { alfa: 0.16 });
-    opreste = gravura(c, { ...optiuni, deseneaza: false });
+    if (c) opreste = gravura(c, { ...optiuni, deseneaza: false });
+  });
+}
+
+/**
+ * The seal large and faint behind the whole page, centred on `tinta` (the card page's QR code, 2026-10-30: "make it the
+ * background", "center the QR inside the seal"), its ring just clear of the target's corners. Without a target (a phone
+ * shows no QR code), low under the words. The canvas covers the document, not the window, so the seal scrolls with
+ * what it frames.
+ */
+export function sigiliuInFundal(tinta: Element | null): void {
+  const c = document.createElement("canvas");
+  c.className = "fundal-sigiliu";
+  c.setAttribute("aria-hidden", "true");
+  document.body.prepend(c);
+  const optiuni = () => {
+    c.style.height = "0";
+    const W = document.documentElement.clientWidth, H = document.documentElement.scrollHeight;
+    c.style.height = `${H}px`;
+    const m = Math.min(W, H);
+    const t = tinta?.getBoundingClientRect();
+    if (!t?.width) return { x: 0.62, y: Math.min(0.72, (0.72 * innerHeight) / H), r: (0.62 * Math.min(W, innerHeight)) / m, fond: 0 };
+    // As wide as the target's side: the ring stands clear of the target's corners all round.
+    return { x: (t.left + t.width / 2 + scrollX) / W, y: (t.top + t.height / 2 + scrollY) / H, r: Math.max(t.width, t.height) / m, fond: 0 };
+  };
+  let opreste = gravura(c, { ...optiuni(), deseneaza: !faraMiscare() });
+  let latime = innerWidth;
+  addEventListener("resize", () => {
+    if (Math.abs(innerWidth - latime) < 40) return;
+    latime = innerWidth;
+    opreste();
+    opreste = gravura(c, { ...optiuni(), deseneaza: false });
   });
 }
 

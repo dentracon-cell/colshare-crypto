@@ -7,11 +7,12 @@ import { citesteCarte } from "./oameni.ts";
 import { svgQr } from "../core/qr.ts";
 import { cuPlay, frazaInvitatie, invitatie, PLAY } from "./lansare.ts";
 import { piciorHtml } from "./legal.ts";
-import { montezBanda } from "./pagina-material.ts";
+import { montezBanda, sigiliuInFundal } from "./pagina-material.ts";
 
 punLimba(limbaTelefonului());
-// The link pages' night band with the wordmark (as /p/ and /a/), so a card reads as Colshare's at a glance.
-montezBanda();
+// The link pages' night band with the wordmark (as /p/ and /a/), so a card reads as Colshare's at a glance; the seal
+// lies behind the page instead, around the QR code (below).
+montezBanda(false, true);
 const el = document.getElementById("pagina")!;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const tt = (k: Cheie, v?: Record<string, string | number>) => esc(t(k, v));
@@ -41,6 +42,7 @@ if (!carte) {
     <p>${tt("o.text")}</p>
     ${copiez}${play ? "" : `<p class="mic">${tt("o.dupa")}</p>`}</div>
     ${peCalculator ? `<div class="o-qr"><div class="qr" role="img" aria-label="${tt("o.qr")}">${svgQr(adresa, 220)}</div><p class="mic">${tt("o.qr")}</p></div>` : ""}</div>${piciorHtml(true)}`;
+  sigiliuInFundal(el.querySelector(".o-qr .qr"));
   document.getElementById("copiez")!.addEventListener("click", async (e) => {
     const b = e.currentTarget as HTMLButtonElement;
     try {
