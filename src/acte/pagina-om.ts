@@ -5,7 +5,7 @@ import aplicatie from "./aplicatie.json";
 import { punLimba, limbaTelefonului, t, type Cheie } from "./limba.ts";
 import { citesteCarte } from "./oameni.ts";
 import { svgQr } from "../core/qr.ts";
-import { cuPlay, frazaInvitatie, invitatie, PLAY } from "./lansare.ts";
+import { cuPlay, frazaInvitatie, invitatie, peAndroid, PLAY } from "./lansare.ts";
 import { piciorHtml } from "./legal.ts";
 import { montezBanda, sigiliuInFundal } from "./pagina-material.ts";
 
@@ -19,6 +19,16 @@ montezBanda(false, peCalculator);
 const el = document.getElementById("pagina")!;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const tt = (k: Cheie, v?: Record<string, string | number>) => esc(t(k, v));
+
+/**
+ * The card's link as an Android intent for the app alone: the card stays in the data (Android takes the spec after
+ * the last #), and a phone without the app goes to Google Play once the app is there, to the home page before.
+ */
+function intentie(adresa: string, play: boolean): string {
+  const u = new URL(adresa);
+  const inapoi = play ? PLAY : `${u.origin}/`;
+  return `intent://${u.host}${u.pathname}${u.hash}#Intent;scheme=https;package=${aplicatie.id};S.browser_fallback_url=${encodeURIComponent(inapoi)};end`;
+}
 
 const adresa = location.href;
 const carte = citesteCarte(adresa);
@@ -34,15 +44,25 @@ if (!carte) {
   // once the app is on Google Play, getting it is the one thing to do, since a phone that has it opens the link in the
   // app and never shows this page.
   const play = cuPlay();
-  const copiez = `<button class="buton-ton copiez" id="copiez">${tt("trimit.copiez")}</button>`;
+  // One thing to do, then the other way, then what to do without the app (2026-10-31, "make the page more suitable"):
+  // who gave the card is the heading; on an Android phone "Open in Colshare" hands the link to the app, since an in-app
+  // browser (Messenger, Instagram) shows this page even where the app is installed; copying says where to paste.
+  const deschid = peAndroid() && !peCalculator
+    ? `<a class="buton-sigiliu" href="${esc(intentie(adresa, play))}">${tt("o.deschid")}</a>` : "";
+  const cale = `${t("oameni.titlu")} › ${t("oameni.adaug")}`;
+  const lacat = `<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>`;
   // On a computer the page is wide (the band's wordmark moves with it) and the QR code stands beside the text, so the
   // whole card fits one screen without scrolling (2026-10-30); a narrow window stacks them as on a phone.
   if (peCalculator) el.closest(".pagina-link")?.classList.add("lata");
-  el.innerHTML = `<div class="o-carte"><div class="o-text"><h1>${tt("o.titlu")}</h1><p class="titlu-pachet">${tt("o.de", { nume: carte.nume })}</p>
-    <p class="o-invit">${frazaInvitatie("a.invit")}</p>
-    ${play ? `<a class="buton-sigiliu" href="${PLAY}" target="_blank" rel="noopener">${tt("invit.play")}</a><p class="mic">${tt("o.dupa")}</p>` : ""}
-    <p>${tt("o.text")}</p>
-    ${copiez}${play ? "" : `<p class="mic">${tt("o.dupa")}</p>`}</div>
+  el.innerHTML = `<div class="o-carte"><div class="o-text"><p class="o-eticheta">${tt("o.titlu")}</p>
+    <h1>${tt("o.de", { nume: carte.nume })}</h1>
+    <p class="o-ce">${tt("o.text")}</p>
+    <div class="o-actiuni">${deschid}<button class="buton-contur copiez" id="copiez">${tt("trimit.copiez")}</button>
+    <p class="mic">${tt("o.lipesc", { cale })}</p></div>
+    <section class="o-fara-app"><h2>${tt("o.nu-am")}</h2><p>${frazaInvitatie("a.invit")}</p>
+    ${play ? `<a class="buton-contur" href="${PLAY}" target="_blank" rel="noopener">${tt("invit.play")}</a>` : ""}
+    <p class="mic">${tt("o.dupa")}</p></section>
+    <p class="o-server">${lacat}${tt("o.server")}</p></div>
     ${peCalculator ? `<div class="o-qr"><div class="qr" role="img" aria-label="${tt("o.qr")}">${svgQr(adresa, 220)}</div><p class="mic">${tt("o.qr")}</p></div>` : ""}</div>
     ${peCalculator
     // In a wide window the caption goes on the footer's line, under the code, level with the legal links (2026-10-30).
