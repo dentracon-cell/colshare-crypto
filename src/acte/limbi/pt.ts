@@ -360,7 +360,7 @@ export const PT: Record<Cheie, string> = {
   "eroare.pornire": "Não foi possível iniciar a {app}. Feche a aplicação e abra-a de novo.",
   "eroare.secret": "Esta ligação não foi criada neste telemóvel.",
   "eroare.fara-email": "O envio por e-mail não está disponível agora. Partilhe a ligação.",
-  "p.titlu": "Documentos enviados para si",
+  "p.titlu": "Recebeu documentos",
   "p.de": "Enviado por alguém que se apresenta como «{nume}». Os nomes não são verificados.",
   "p.text": "Estão cifrados: só este link os abre, uma vez. Ao abrir, são apagados do servidor.",
   "p.deschid": "Abrir os documentos",

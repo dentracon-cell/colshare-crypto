@@ -360,7 +360,7 @@ export const NL: Record<Cheie, string> = {
   "eroare.pornire": "{app} kon niet starten. Sluit de app en open hem opnieuw.",
   "eroare.secret": "Deze link is niet op deze telefoon gemaakt.",
   "eroare.fara-email": "Versturen per e-mail lukt nu niet. Deel de link.",
-  "p.titlu": "Documenten die naar u zijn gestuurd",
+  "p.titlu": "U hebt documenten ontvangen",
   "p.de": "Gestuurd door iemand die zich “{nume}” noemt. Namen worden niet gecontroleerd.",
   "p.text": "Ze zijn versleuteld: alleen deze link opent ze, één keer. Bij het openen worden ze van de server verwijderd.",
   "p.deschid": "Documenten openen",
