@@ -62,13 +62,23 @@ if (!carte) {
   // On a computer the page is wide (the band's wordmark moves with it) and the QR code stands beside the text, so the
   // whole card fits one screen without scrolling (2026-10-30); a narrow window stacks them as on a phone.
   if (peCalculator) el.closest(".pagina-link")?.classList.add("lata");
-  el.innerHTML = `<div class="o-carte"><div class="o-text"><h1>${esc(t("o.de", { nume: "%NUME%" })).replace("%NUME%", () => `<span class="o-nume">${esc(carte.nume)}</span>`)}</h1>
-    <p class="o-ce">${tt("o.text")}</p>
+  // A phone that cannot have the app (an iPhone: Colshare is Android only) cannot add the card, so the page says so and
+  // offers what works in its browser instead: papers sent to it open there, and an ask link lets it send papers
+  // (2026-10-31, "there's no Colshare app for iPhone"). Its one button asks the card's owner for such a link.
+  const faraAplicatie = !peCalculator && !peAndroid();
+  const nume = { nume: carte.nume };
+  const mijloc = faraAplicatie
+    ? `<p class="o-ce">${tt("o.ios", nume)}</p>
+    <ul class="o-ios"><li>${tt("o.ios-primesc", nume)}</li><li>${tt("o.ios-trimit", nume)}</li></ul>
+    ${loc}<div class="o-actiuni"><button class="buton-sigiliu" id="cer">${tt("o.ios-cer")}</button></div>`
+    : `<p class="o-ce">${tt("o.text")}</p>
     ${loc}<div class="o-actiuni">${deschid}<button class="buton-contur copiez" id="copiez">${tt("trimit.copiez")}</button>
     <p class="mic">${tt("o.lipesc", { cale })}</p></div>
     ${loc}<section class="o-fara-app"><h2>${tt("o.nu-am")}</h2><p>${frazaInvitatie("a.invit")}</p>
     ${play ? `<a class="buton-contur" href="${PLAY}" target="_blank" rel="noopener">${tt("invit.play")}</a>` : ""}
-    <p class="mic">${tt("o.dupa")}</p></section>
+    <p class="mic">${tt("o.dupa")}</p></section>`;
+  el.innerHTML = `<div class="o-carte"><div class="o-text"><h1>${esc(t("o.de", { nume: "%NUME%" })).replace("%NUME%", () => `<span class="o-nume">${esc(carte.nume)}</span>`)}</h1>
+    ${mijloc}
     ${loc}<p class="o-server">${lacat}${tt("o.server")}</p></div>
     ${peCalculator ? `<div class="o-qr"><div class="qr" role="img" aria-label="${tt("o.qr")}">${svgQr(adresa, 220)}</div><p class="mic">${tt("o.qr")}</p></div>` : ""}</div>
     ${peCalculator
@@ -76,7 +86,22 @@ if (!carte) {
     ? `<div class="o-subsol">${piciorHtml(true)}<p class="o-qr-jos">${tt("o.qr")}</p></div>`
     : piciorHtml(true)}`;
   if (peCalculator) sigiliuInFundal(el.querySelector(".o-qr .qr"));
-  document.getElementById("copiez")!.addEventListener("click", async (e) => {
+  // The message to the card's owner goes through the phone's share sheet (Messages, WhatsApp, Messenger); where there is
+  // none, it is copied to paste in the chat the card came from.
+  document.getElementById("cer")?.addEventListener("click", async (e) => {
+    const b = e.currentTarget as HTMLButtonElement;
+    const text = t("o.ios-mesaj");
+    if (navigator.share) {
+      try { await navigator.share({ text }); return; } catch (x) { if ((x as Error).name === "AbortError") return; }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      b.textContent = t("o.ios-copiat", nume);
+    } catch {
+      prompt(t("o.ios-cer"), text);
+    }
+  });
+  document.getElementById("copiez")?.addEventListener("click", async (e) => {
     const b = e.currentTarget as HTMLButtonElement;
     try {
       await navigator.clipboard.writeText(adresa);
