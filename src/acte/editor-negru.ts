@@ -2,6 +2,8 @@
 // desk"): the person drags boxes over what to hide, and an ID's code lines (<<<) can be hidden with one switch, then the
 // black is painted into the picture's pixels before anything leaves the device (./innegrire.ts deseneazaNegru), so
 // nothing under a box can be uncovered. Used by the ask page (./pagina-cerere.ts) and the desk (./birou/birou.ts).
+// The page zooms and moves (decisions.md 2026-10-31, "Black out and marked copies on every paper"), so one line of
+// small print on a statement or a contract can be covered on its own.
 import type { Zona } from "./copie-sigura.ts";
 import { deseneazaNegru } from "./innegrire.ts";
 
@@ -12,8 +14,12 @@ export const zonaMrz = (w: number, h: number): Zona => (Math.max(w, h) / Math.mi
 export const zoneDe = (img: { width: number; height: number }, manual: Zona[], mrz: boolean): Zona[] =>
   [...(mrz ? [zonaMrz(img.width, img.height)] : []), ...manual];
 
-/** A box smaller than this share of the page on either side is a slip of the finger, not a box. */
-const MIN = 0.01;
+/** A box smaller than this many screen pixels on either side is a slip of the finger, not a box (a line of 7-point print zoomed in is far taller). */
+const MIN_PX = 3;
+/** How far the page zooms in past "whole page": enough for one line of small print on a phone. */
+const ZOOM_MAX = 12;
+/** One press of + or − zooms by this much. */
+const PAS = 1.5;
 
 /** The picture with its boxes painted in, as a JPEG at its own size. */
 export async function jpegCuNegru(img: ImageBitmap, zone: Zona[], calitate = 0.88): Promise<{ date: Uint8Array; w: number; h: number; blob: Blob }> {
@@ -26,7 +32,19 @@ export async function jpegCuNegru(img: ImageBitmap, zone: Zona[], calitate = 0.8
   return { date: new Uint8Array(await blob.arrayBuffer()), w: img.width, h: img.height, blob };
 }
 
-/** The editor's words, in the page's language and register. */
+/** How to close each editor open now, as Cancel. */
+const deschise = new Set<() => void>();
+
+/**
+ * Closes every box editor open, as Cancel (nothing kept): the desk calls it when it locks, so no page stays on the
+ * screen over the lock (attack test 2026-10-31, N5).
+ */
+export function inchidEditoarele(): void {
+  // Each one takes itself out of the set as it closes, which a Set allows while it is walked.
+  for (const x of deschise) x();
+}
+
+/** The editor's words, in the page's language and register. An empty `mrz` leaves the code lines' switch out. */
 export interface TexteEditor {
   titlu: string;
   text: string;
@@ -34,62 +52,173 @@ export interface TexteEditor {
   anulez: string;
   gata: string;
   renunt: string;
+  mareste: string;
+  micsoreaza: string;
+  potrivesc: string;
+}
+
+/** Where the page is on the screen: its scale against the picture's pixels and its top-left corner, in CSS pixels. */
+interface Vedere { s: number; x: number; y: number }
+
+/**
+ * The view kept inside the space: a page smaller than the space is centred on that side, a larger one can't be moved
+ * past its edges. Exported for the tests.
+ */
+export function incadrez(v: Vedere, img: { w: number; h: number }, loc: { w: number; h: number }): Vedere {
+  const pe = (poz: number, marime: number, spatiu: number) => (marime <= spatiu ? (spatiu - marime) / 2 : Math.min(0, Math.max(spatiu - marime, poz)));
+  return { s: v.s, x: pe(v.x, img.w * v.s, loc.w), y: pe(v.y, img.h * v.s, loc.h) };
+}
+
+/** The view zoomed to scale `s` (kept between "whole page" and ZOOM_MAX times that) with the point (px, py) of the space staying put. */
+export function zoomez(v: Vedere, s: number, px: number, py: number, potrivit: number): Vedere {
+  const s1 = Math.min(potrivit * ZOOM_MAX, Math.max(potrivit, s));
+  return { s: s1, x: px - ((px - v.x) * s1) / v.s, y: py - ((py - v.y) * s1) / v.s };
 }
 
 /**
  * Opens the editor over the page for `img` with the boxes kept so far; resolves with the boxes and the switch when the
  * person is done, or undefined when they cancel (nothing changes then).
+ *
+ * One finger or the mouse draws a box; two fingers move and zoom the page; the wheel moves it, and Ctrl with the wheel
+ * (or a pad's pinch) zooms it, as do + − and the "whole page" button; the middle button held moves it with the mouse. A tap on a box drawn takes it away.
  */
 export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x: TexteEditor): Promise<{ manual: Zona[]; mrz: boolean } | undefined> {
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+  const lupa = (semn: string) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20"/>${semn}</svg>`;
   let manual = [...manual0], mrz = mrz0;
-  let trag: { x: number; y: number; z: Zona } | undefined;
+  let trag: { x: number; y: number; z: Zona; misc: boolean } | undefined;
+  let muta: { x: number; y: number; v: Vedere } | undefined;
+  let ciupit: { d: number; mx: number; my: number; v: Vedere } | undefined;
+  const degete = new Map<number, { x: number; y: number }>();
   const strat = document.createElement("div");
   strat.className = "editor-negru";
   strat.setAttribute("role", "dialog");
   strat.setAttribute("aria-modal", "true");
   strat.setAttribute("aria-label", x.titlu);
   strat.innerHTML = `<div class="editor-cap"><b>${esc(x.titlu)}</b><small>${esc(x.text)}</small></div>
-    <div class="editor-loc"><canvas class="editor-panza"></canvas></div>
-    <div class="editor-jos"><label class="comutator"><span><b>${esc(x.mrz)}</b></span><input type="checkbox" role="switch" class="editor-mrz"${mrz ? " checked" : ""}></label>
+    <div class="editor-loc"><canvas class="editor-panza"></canvas>
+      <div class="editor-zoom"><button type="button" class="editor-minus" aria-label="${esc(x.micsoreaza)}" title="${esc(x.micsoreaza)}">${lupa('<path d="M7.5 10.5h6"/>')}</button>
+        <button type="button" class="editor-tot" title="${esc(x.potrivesc)}">100%</button>
+        <button type="button" class="editor-plus" aria-label="${esc(x.mareste)}" title="${esc(x.mareste)}">${lupa('<path d="M7.5 10.5h6M10.5 7.5v6"/>')}</button></div></div>
+    <div class="editor-jos">${x.mrz ? `<label class="comutator"><input type="checkbox" role="switch" class="editor-mrz"${mrz ? " checked" : ""}><span class="editor-pilula"></span><span class="editor-eticheta"><b>${esc(x.mrz)}</b></span></label>` : ""}
       <div class="editor-butoane"><button type="button" class="buton mic text editor-anulez">${esc(x.anulez)}</button>
       <button type="button" class="buton contur editor-renunt">${esc(x.renunt)}</button><button type="button" class="buton plin editor-gata">${esc(x.gata)}</button></div></div>`;
   document.body.append(strat);
   const panza = strat.querySelector<HTMLCanvasElement>(".editor-panza")!;
   const loc = strat.querySelector<HTMLElement>(".editor-loc")!;
-  // The page fitted to the space left between the head and the buttons, redrawn at every change.
+  const tot = strat.querySelector<HTMLButtonElement>(".editor-tot")!;
+  const pagina = { w: img.width, h: img.height };
+  const spatiul = () => { const r = loc.getBoundingClientRect(); return { w: r.width || 320, h: r.height || 400 }; };
+  const potrivit = () => { const l = spatiul(); return Math.min(l.w / pagina.w, l.h / pagina.h); };
+  let v: Vedere = { s: potrivit(), x: 0, y: 0 };
+  const pun = (n: Vedere) => { v = incadrez(n, pagina, spatiul()); deseneaza(); };
+
+  // The canvas fills the space at the screen's own resolution; only what is in view is drawn, so zooming in never asks
+  // for a canvas larger than the screen.
   const deseneaza = () => {
-    const r = loc.getBoundingClientRect();
-    const k = Math.min((r.width || 320) / img.width, (r.height || 400) / img.height, 1);
-    panza.width = Math.max(1, Math.round(img.width * k));
-    panza.height = Math.max(1, Math.round(img.height * k));
-    deseneazaNegru(panza.getContext("2d")!, img, panza.width, panza.height, [...zoneDe(img, manual, mrz), ...(trag ? [trag.z] : [])]);
+    const l = spatiul(), r = devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(l.w * r)), h = Math.max(1, Math.round(l.h * r));
+    if (panza.width !== w || panza.height !== h) { panza.width = w; panza.height = h; }
+    const g = panza.getContext("2d")!;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, w, h);
+    g.setTransform(r * v.s, 0, 0, r * v.s, r * v.x, r * v.y);
+    g.imageSmoothingQuality = "high";
+    deseneazaNegru(g, img, pagina.w, pagina.h, zoneDe(img, manual, mrz));
+    if (trag) {
+      // The box being drawn lets the words under it show, so its edges can be put exactly on a line.
+      const z = trag.z;
+      g.fillStyle = "rgb(0 0 0 / 0.45)";
+      g.fillRect(z.x * pagina.w, z.y * pagina.h, z.w * pagina.w, z.h * pagina.h);
+      g.lineWidth = 1.5 / v.s;
+      g.strokeStyle = "#e0312b";
+      g.strokeRect(z.x * pagina.w, z.y * pagina.h, z.w * pagina.w, z.h * pagina.h);
+    }
+    tot.textContent = `${Math.round((v.s / potrivit()) * 100)}%`;
   };
-  const punct = (e: PointerEvent) => {
-    const r = panza.getBoundingClientRect();
-    return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) };
-  };
+  // A point of the space (CSS pixels from its corner) and the same point on the page (0–1 of its sides).
+  const inSpatiu = (e: { clientX: number; clientY: number }) => { const r = loc.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const pePagina = (p: { x: number; y: number }) => ({ x: Math.min(1, Math.max(0, (p.x - v.x) / (pagina.w * v.s))), y: Math.min(1, Math.max(0, (p.y - v.y) / (pagina.h * v.s))) });
+  const zoomLa = (s: number, p = { x: spatiul().w / 2, y: spatiul().h / 2 }) => pun(zoomez(v, s, p.x, p.y, potrivit()));
+
   panza.addEventListener("pointerdown", (e) => {
     panza.setPointerCapture(e.pointerId);
-    const p = punct(e);
-    trag = { ...p, z: { x: p.x, y: p.y, w: 0, h: 0 } };
+    const p = inSpatiu(e);
+    degete.set(e.pointerId, p);
+    if (degete.size === 2) {
+      // A second finger: the box begun is dropped, and the two fingers move and zoom the page.
+      trag = undefined;
+      muta = undefined;
+      const [a, b] = [...degete.values()];
+      ciupit = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, v };
+      deseneaza();
+      return;
+    }
+    if (degete.size > 2) return;
+    if (e.button === 1) { e.preventDefault(); muta = { ...p, v }; panza.classList.add("muta"); return; }
+    if (e.button !== 0) return;
+    const q = pePagina(p);
+    trag = { ...q, z: { x: q.x, y: q.y, w: 0, h: 0 }, misc: false };
   });
   panza.addEventListener("pointermove", (e) => {
+    if (!degete.has(e.pointerId)) return;
+    const p = inSpatiu(e);
+    degete.set(e.pointerId, p);
+    if (ciupit && degete.size >= 2) {
+      const [a, b] = [...degete.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      // The page point first under the fingers' middle stays under it, at the new scale.
+      const z = zoomez(ciupit.v, (ciupit.v.s * d) / ciupit.d, ciupit.mx, ciupit.my, potrivit());
+      pun({ s: z.s, x: z.x + mx - ciupit.mx, y: z.y + my - ciupit.my });
+      return;
+    }
+    if (muta) { pun({ s: muta.v.s, x: muta.v.x + p.x - muta.x, y: muta.v.y + p.y - muta.y }); return; }
     if (!trag) return;
-    const p = punct(e);
-    trag.z = { x: Math.min(trag.x, p.x), y: Math.min(trag.y, p.y), w: Math.abs(p.x - trag.x), h: Math.abs(p.y - trag.y) };
+    const q = pePagina(p);
+    trag.z = { x: Math.min(trag.x, q.x), y: Math.min(trag.y, q.y), w: Math.abs(q.x - trag.x), h: Math.abs(q.y - trag.y) };
+    trag.misc ||= trag.z.w * pagina.w * v.s > MIN_PX || trag.z.h * pagina.h * v.s > MIN_PX;
     deseneaza();
   });
-  const termin = () => {
-    if (trag && trag.z.w > MIN && trag.z.h > MIN) manual.push(trag.z);
+  const ridic = (e: PointerEvent, anulat: boolean) => {
+    if (!degete.delete(e.pointerId)) return;
+    if (ciupit) { if (degete.size < 2) ciupit = undefined; return; }
+    if (muta) { muta = undefined; panza.classList.remove("muta"); return; }
+    if (!trag) return;
+    const z = trag.z, misc = trag.misc;
     trag = undefined;
+    if (!anulat) {
+      if (z.w * pagina.w * v.s > MIN_PX && z.h * pagina.h * v.s > MIN_PX) manual.push(z);
+      else if (!misc) {
+        // A tap on a box drawn takes it away (the last one drawn over that point first).
+        for (let i = manual.length - 1; i >= 0; i--) {
+          const m = manual[i];
+          if (z.x >= m.x && z.x <= m.x + m.w && z.y >= m.y && z.y <= m.y + m.h) { manual.splice(i, 1); break; }
+        }
+      }
+    }
     deseneaza();
   };
-  panza.addEventListener("pointerup", termin);
-  panza.addEventListener("pointercancel", () => { trag = undefined; deseneaza(); });
-  strat.querySelector<HTMLInputElement>(".editor-mrz")!.addEventListener("change", (e) => { mrz = (e.target as HTMLInputElement).checked; deseneaza(); });
+  panza.addEventListener("pointerup", (e) => ridic(e, false));
+  panza.addEventListener("pointercancel", (e) => ridic(e, true));
+  // The wheel moves the page (Shift sideways); Ctrl with it, which is also how a pad's pinch arrives, zooms.
+  loc.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? spatiul().h : 1;
+    if (e.ctrlKey || e.metaKey) zoomLa(v.s * Math.exp(-e.deltaY * k * 0.0025), inSpatiu(e));
+    else pun({ s: v.s, x: v.x - (e.shiftKey ? e.deltaY : e.deltaX) * k, y: v.y - (e.shiftKey ? 0 : e.deltaY) * k });
+  }, { passive: false });
+  strat.querySelector(".editor-plus")!.addEventListener("click", () => zoomLa(v.s * PAS));
+  strat.querySelector(".editor-minus")!.addEventListener("click", () => zoomLa(v.s / PAS));
+  tot.addEventListener("click", () => pun({ s: potrivit(), x: 0, y: 0 }));
+  strat.querySelector<HTMLInputElement>(".editor-mrz")?.addEventListener("change", (e) => { mrz = (e.target as HTMLInputElement).checked; deseneaza(); });
   strat.querySelector(".editor-anulez")!.addEventListener("click", () => { manual.pop(); deseneaza(); });
-  const laRedim = () => deseneaza();
+  // A new size keeps the zoom against "whole page" and the page's middle where it was.
+  let potrivitInainte = potrivit();
+  const laRedim = () => {
+    const p0 = potrivitInainte, p1 = potrivit();
+    potrivitInainte = p1;
+    pun({ s: (v.s / p0) * p1, x: v.x * (p1 / p0), y: v.y * (p1 / p0) });
+  };
   addEventListener("resize", laRedim);
   // The page behind takes neither scroll nor focus while the editor is open.
   const sus = document.documentElement.style.overflow;
@@ -98,11 +227,12 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
   // Nothing behind can be reached by Tab or a screen reader either (attack test 2026-10-30, N2).
   const blocate = [...document.body.children].filter((e): e is HTMLElement => e !== strat && e instanceof HTMLElement && !e.inert);
   for (const b of blocate) b.inert = true;
-  requestAnimationFrame(deseneaza);
-  deseneaza();
+  requestAnimationFrame(() => { potrivitInainte = potrivit(); pun({ s: potrivit(), x: 0, y: 0 }); });
+  pun(v);
   strat.querySelector<HTMLButtonElement>(".editor-gata")!.focus();
   return new Promise((ok) => {
     const inchid = (r: { manual: Zona[]; mrz: boolean } | undefined) => {
+      deschise.delete(anulez);
       removeEventListener("resize", laRedim);
       document.documentElement.style.overflow = sus;
       for (const b of blocate) b.inert = false;
@@ -110,9 +240,17 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
       inapoi?.focus();
       ok(r);
     };
+    const anulez = () => inchid(undefined);
+    deschise.add(anulez);
     strat.querySelector(".editor-gata")!.addEventListener("click", () => inchid({ manual, mrz }));
     strat.querySelector(".editor-renunt")!.addEventListener("click", () => inchid(undefined));
-    // Escape never throws away boxes drawn: with any, it is Done; with none, it cancels (attack test 2026-10-30, N4).
-    strat.addEventListener("keydown", (e) => { if (e.key === "Escape") inchid(manual.length || mrz ? { manual, mrz } : undefined); });
+    strat.addEventListener("keydown", (e) => {
+      // Escape never throws away boxes drawn: with any, it is Done; with none, it cancels (attack test 2026-10-30, N4).
+      if (e.key === "Escape") { e.stopPropagation(); inchid(manual.length || mrz ? { manual, mrz } : undefined); }
+      else if ((e.target as HTMLElement).tagName === "INPUT") return;
+      else if (e.key === "+" || e.key === "=") zoomLa(v.s * PAS);
+      else if (e.key === "-") zoomLa(v.s / PAS);
+      else if (e.key === "0") pun({ s: potrivit(), x: 0, y: 0 });
+    });
   });
 }

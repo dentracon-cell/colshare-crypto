@@ -294,6 +294,7 @@ async function ascundIn(i: number, j: number): Promise<void> {
   try {
     const r = await editezNegru(img, p.manual ?? [], p.mrz ?? false, {
       titlu: t("a.ascund.titlu"), text: t("a.ascund.text"), mrz: t("copie.mrz"), anulez: t("copie.anulez"), gata: t("a.ascund.gata"), renunt: t("a.ascund.renunt"),
+      mareste: t("editor.mareste"), micsoreaza: t("editor.micsoreaza"), potrivesc: t("editor.potrivesc"),
     });
     if (!r) return;
     const zone = zoneDe(img, r.manual, r.mrz);
