@@ -741,6 +741,7 @@ export const PL: Record<Cheie, string> = {
   "o.lipesc": "Potem wystarczy wkleić go w {app}: {cale}.",
   "o.nu-am": "Jeszcze bez {app}?",
   "o.server": "Nic z tej strony nie trafia na serwer.",
+  "p.eticheta": "Dokumenty",
   "o.ios": "{app} jest na razie tylko na Androida. Wymiana dokumentów z {nume} działa jednak na tym telefonie, w przeglądarce:",
   "o.ios-primesc": "Dokumenty wysłane przez {nume} otwierają się tutaj, przez link.",
   "o.ios-trimit": "Aby wysłać dokumenty do {nume}, wystarczy poprosić o link z prośbą: dodaje się je z tego telefonu, szyfrowane.",

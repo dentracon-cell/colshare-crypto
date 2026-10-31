@@ -109,19 +109,20 @@ function lista(titlu: string | undefined, fisiere: FisierPachet[], cine = "") {
     : `<span class="hartie-fel">${fel(f)}</span>`);
   // One ochre button leads: Save all when there are several, each Save when there is one.
   const salvez = fisiere.length > 1 ? "buton-ton" : "buton-sigiliu mic";
-  // The scene folds to a band with the opened seal and who sent them; the papers rise in on the paper below.
+  // The scene folds to the band the other link pages have ("colshare PAPERS"); the heading, who sent them, their note
+  // and the papers are on the page below, left-aligned, with nothing drawn behind them (2026-10-31, "too much clutter").
   scena.cifru(false);
   lacat.opreste();
-  scena.continut.innerHTML = `<span class="sigiliu-scena mic">${sigiliuSvg("deschis", { px: 64 })}</span><h1>${tt("p.titlu")}</h1>${cine}${titlu ? `<p class="nota">${tt("p.de-la", { titlu })}</p>` : ""}`;
-  scena.restrang();
-  const total = fisiere.reduce((x, f) => x + f.date.length, 0);
+  scena.continut.innerHTML = "";
+  scena.restrang(t("p.eticheta"));
   const nr = (i: number) => String(i + 1).padStart(2, "0");
-  arata(`<p class="banda salveaza" role="note">${ico("ceas")}<span>${tt("p.salveaza")}</span></p>
-    <p class="plic-cap" aria-hidden="true">${ico("foi")}<span>${fisiere.length}</span><span>${marime(total)}</span></p>
-    <ul class="hartii">${fisiere.map((f, i) => `<li style="--i:${i}" data-hartie="${i}"><span class="hartie-nr" aria-hidden="true">${nr(i)}</span>${chip(f, i)}<span class="hartie-text"><b>${esc(f.nume)}</b><span class="hartie-meta">${fel(f)} · ${marime(f.date.length)}</span>${verific(f)}</span>
-      <span class="hartie-act">${f.tip.startsWith("image/") && !poza(f) ? "" : `<a class="buton-ton" href="${urls[i]}" target="_blank" rel="noopener">${ico("ochi")}${tt("p.vad")}</a>`}
-      <a class="${salvez}" href="${urls[i]}" download="${esc(f.nume)}">${ico("jos")}${tt("p.descarc")}</a></span></li>`).join("")}</ul>
-    ${fisiere.length > 1 ? `<button class="buton-sigiliu" id="toate">${ico("jos")}${tt("p.toate")}</button>` : ""}${invit()}`);
+  const unul = fisiere.length === 1;
+  arata(`<div class="p-deschis"><h1>${tt("p.titlu")}</h1>${cine}${titlu ? `<p class="nota">${tt("p.de-la", { titlu })}</p>` : ""}
+    <p class="p-salveaza" role="note">${ico("ceas")}<span>${tt("p.salveaza")}</span></p>
+    <ul class="hartii${unul ? " unul" : ""}">${fisiere.map((f, i) => `<li style="--i:${i}" data-hartie="${i}"><span class="hartie-nr" aria-hidden="true">${nr(i)}</span>${chip(f, i)}<span class="hartie-text"><b>${esc(f.nume)}</b><span class="hartie-meta">${fel(f)} · ${marime(f.date.length)}</span>${verific(f)}</span>
+      <span class="hartie-act">${f.tip.startsWith("image/") && !poza(f) ? "" : `<a class="buton-ton" href="${urls[i]}" target="_blank" rel="noopener">${ico("ochi")}<span>${tt("p.vad")}</span></a>`}
+      <a class="${salvez}" href="${urls[i]}" download="${esc(f.nume)}">${ico("jos")}<span>${tt("p.descarc")}</span></a></span></li>`).join("")}</ul>
+    ${fisiere.length > 1 ? `<button class="buton-sigiliu" id="toate">${ico("jos")}${tt("p.toate")}</button>` : ""}</div>${invit()}`);
   // A paper saved is ticked off on its tile, so a long list shows what is still to save.
   const bifez = (a: HTMLAnchorElement) => {
     const li = a.closest("li");

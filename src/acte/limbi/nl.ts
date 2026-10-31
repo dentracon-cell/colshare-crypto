@@ -741,6 +741,7 @@ export const NL: Record<Cheie, string> = {
   "o.lipesc": "Plak hem daarna in {app}: {cale}.",
   "o.nu-am": "Nog geen {app}?",
   "o.server": "Niets op deze pagina gaat naar een server.",
+  "p.eticheta": "Documenten",
   "o.ios": "{app} is er voorlopig alleen voor Android. U kunt toch documenten uitwisselen met {nume} vanaf deze telefoon, in de browser:",
   "o.ios-primesc": "Documenten die {nume} u stuurt, openen hier via een link.",
   "o.ios-trimit": "Om {nume} documenten te sturen, vraagt u om een verzoeklink: u voegt ze toe vanaf deze telefoon, versleuteld.",
