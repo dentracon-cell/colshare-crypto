@@ -15,6 +15,9 @@ const peCalculator = matchMedia("(pointer: fine)").matches;
 // The link pages' night band with the wordmark (as /p/ and /a/), so a card reads as Colshare's at a glance. On a
 // computer the seal lies behind the page instead, around the QR code (below); a phone has no QR code, and a seal behind
 // the words made them hard to read (2026-10-31), so there it stays in the band, as on /p/ and /a/.
+// The page's own class first, so the band already has its phone height when it is drawn (the drawing takes the size
+// it finds; keyed on the card's words, which come later, the seal was drawn tall and squeezed).
+document.body.classList.add("pagina-om");
 montezBanda(false, peCalculator);
 const el = document.getElementById("pagina")!;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);

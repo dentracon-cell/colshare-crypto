@@ -29,11 +29,13 @@ export function montezBanda(lata = false, faraSigiliu = false): void {
   const optiuni = { x: 0.86, y: 0.56, r: 0.42, fond: 0 };
   let opresteC = cifruFond(cc, { umple: !faraMiscare(), alfa: 0.16 });
   let opreste = c ? gravura(c, { ...optiuni, deseneaza: !faraMiscare() }) : () => {};
-  // Redrawn whole when the window's width changes enough to matter (a phone turned, a window resized).
-  let latime = innerWidth;
+  // Redrawn whole when the window's width changes enough to matter (a phone turned, a window resized), or the band's
+  // own height changes (a page whose band is lower on a short screen): a canvas drawn for another height is stretched,
+  // and the seal turned oval (2026-10-31, on a Galaxy S24).
+  let latime = innerWidth, inaltime = b.clientHeight;
   addEventListener("resize", () => {
-    if (Math.abs(innerWidth - latime) < 40) return;
-    latime = innerWidth;
+    if (Math.abs(innerWidth - latime) < 40 && b.clientHeight === inaltime) return;
+    latime = innerWidth; inaltime = b.clientHeight;
     opreste(); opresteC();
     opresteC = cifruFond(cc, { alfa: 0.16 });
     if (c) opreste = gravura(c, { ...optiuni, deseneaza: false });
