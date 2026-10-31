@@ -745,7 +745,7 @@ export const IT: Record<Cheie, string> = {
   "o.ios-primesc": "I documenti che {nume} Le invia si aprono qui, con un link.",
   "o.ios-trimit": "Per inviare documenti a {nume}, chieda un link di richiesta: li aggiunge da questo telefono, cifrati.",
   "o.ios-cer": "Chiedi un link",
-  "o.ios-mesaj": "Ciao! Non ho {app} su questo telefono. Mi mandi un link {app}, con i documenti o per mandarti i miei?",
+  "o.ios-mesaj": "Buongiorno! Non ho {app} su questo telefono. Può mandarmi un link {app}, con i documenti o per mandarLe i miei?",
   "o.ios-copiat": "Messaggio copiato: lo incolli nella chat con {nume}.",
   "o.fara-carte": "Questa pagina aggiunge persone in {app}. Il link che ha ricevuto termina con un lungo codice dopo #: apra di nuovo il link intero o chieda alla persona di mandarlo di nuovo.",
   "act.trimit.oameni": "Invia",

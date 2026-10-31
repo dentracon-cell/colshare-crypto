@@ -745,7 +745,7 @@ export const NL: Record<Cheie, string> = {
   "o.ios-primesc": "Documenten die {nume} u stuurt, openen hier via een link.",
   "o.ios-trimit": "Om {nume} documenten te sturen, vraagt u om een verzoeklink: u voegt ze toe vanaf deze telefoon, versleuteld.",
   "o.ios-cer": "Om een link vragen",
-  "o.ios-mesaj": "Hoi! Ik heb {app} niet op deze telefoon. Kun je me een {app}-link sturen, met de documenten of om jou de mijne te sturen?",
+  "o.ios-mesaj": "Hallo! Ik heb {app} niet op deze telefoon. Kunt u mij een {app}-link sturen, met de documenten of om u de mijne te sturen?",
   "o.ios-copiat": "Bericht gekopieerd: plak het in het gesprek met {nume}.",
   "o.fara-carte": "Deze pagina voegt personen toe in {app}. De link die u hebt gekregen, eindigt op een lange code na #: open de hele link opnieuw, of vraag de persoon om hem nog eens te sturen.",
   "act.trimit.oameni": "Sturen",
