@@ -53,19 +53,22 @@ if (!carte) {
   const deschid = peAndroid() && !peCalculator
     ? `<a class="buton-sigiliu" href="${esc(intentie(adresa, play))}">${tt("o.deschid")}</a>` : "";
   const cale = `${t("oameni.titlu")} › ${t("oameni.adaug")}`;
+  // On a phone the steps share the screen's spare height, each gap up to a limit, so the card fills the screen instead
+  // of stopping halfway (2026-10-31); elsewhere these are not shown.
+  const loc = `<i class="o-loc" aria-hidden="true"></i>`;
   const lacat = `<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>`;
   // On a computer the page is wide (the band's wordmark moves with it) and the QR code stands beside the text, so the
   // whole card fits one screen without scrolling (2026-10-30); a narrow window stacks them as on a phone.
   if (peCalculator) el.closest(".pagina-link")?.classList.add("lata");
   el.innerHTML = `<div class="o-carte"><div class="o-text"><p class="o-eticheta">${tt("o.titlu")}</p>
-    <h1>${tt("o.de", { nume: carte.nume })}</h1>
+    <h1>${esc(t("o.de", { nume: "%NUME%" })).replace("%NUME%", () => `<span class="o-nume">${esc(carte.nume)}</span>`)}</h1>
     <p class="o-ce">${tt("o.text")}</p>
-    <div class="o-actiuni">${deschid}<button class="buton-contur copiez" id="copiez">${tt("trimit.copiez")}</button>
+    ${loc}<div class="o-actiuni">${deschid}<button class="buton-contur copiez" id="copiez">${tt("trimit.copiez")}</button>
     <p class="mic">${tt("o.lipesc", { cale })}</p></div>
-    <section class="o-fara-app"><h2>${tt("o.nu-am")}</h2><p>${frazaInvitatie("a.invit")}</p>
+    ${loc}<section class="o-fara-app"><h2>${tt("o.nu-am")}</h2><p>${frazaInvitatie("a.invit")}</p>
     ${play ? `<a class="buton-contur" href="${PLAY}" target="_blank" rel="noopener">${tt("invit.play")}</a>` : ""}
     <p class="mic">${tt("o.dupa")}</p></section>
-    <p class="o-server">${lacat}${tt("o.server")}</p></div>
+    ${loc}<p class="o-server">${lacat}${tt("o.server")}</p></div>
     ${peCalculator ? `<div class="o-qr"><div class="qr" role="img" aria-label="${tt("o.qr")}">${svgQr(adresa, 220)}</div><p class="mic">${tt("o.qr")}</p></div>` : ""}</div>
     ${peCalculator
     // In a wide window the caption goes on the footer's line, under the code, level with the legal links (2026-10-30).
