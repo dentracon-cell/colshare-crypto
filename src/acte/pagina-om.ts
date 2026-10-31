@@ -18,7 +18,9 @@ const peCalculator = matchMedia("(pointer: fine)").matches;
 // The page's own class first, so the band already has its phone height when it is drawn (the drawing takes the size
 // it finds; keyed on the card's words, which come later, the seal was drawn tall and squeezed).
 document.body.classList.add("pagina-om");
-montezBanda(false, peCalculator);
+// What the page is stands in the band, at the right, balancing the wordmark and clear of the band's seal on a phone,
+// not as a label over the heading (2026-10-31).
+montezBanda(false, peCalculator, t("o.titlu"));
 const el = document.getElementById("pagina")!;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const tt = (k: Cheie, v?: Record<string, string | number>) => esc(t(k, v));
@@ -60,8 +62,7 @@ if (!carte) {
   // On a computer the page is wide (the band's wordmark moves with it) and the QR code stands beside the text, so the
   // whole card fits one screen without scrolling (2026-10-30); a narrow window stacks them as on a phone.
   if (peCalculator) el.closest(".pagina-link")?.classList.add("lata");
-  el.innerHTML = `<div class="o-carte"><div class="o-text"><p class="o-eticheta">${tt("o.titlu")}</p>
-    <h1>${esc(t("o.de", { nume: "%NUME%" })).replace("%NUME%", () => `<span class="o-nume">${esc(carte.nume)}</span>`)}</h1>
+  el.innerHTML = `<div class="o-carte"><div class="o-text"><h1>${esc(t("o.de", { nume: "%NUME%" })).replace("%NUME%", () => `<span class="o-nume">${esc(carte.nume)}</span>`)}</h1>
     <p class="o-ce">${tt("o.text")}</p>
     ${loc}<div class="o-actiuni">${deschid}<button class="buton-contur copiez" id="copiez">${tt("trimit.copiez")}</button>
     <p class="mic">${tt("o.lipesc", { cale })}</p></div>

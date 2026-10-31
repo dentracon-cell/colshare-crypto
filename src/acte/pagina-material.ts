@@ -14,19 +14,22 @@ import { geometrie, marcaSvg, R_INEL, sigiliuSvg } from "./sigiliu.ts";
  * it; decisions.md 2026-10-25, "The link pages' band is the cipher"), and the engraving's seal at the right, without its
  * hatch. `lata`: the
  * page beneath is laid out wide on a computer (the ask page's two columns). `faraSigiliu`: the band keeps no seal,
- * because the page lays it behind its own content (the card page, sigiliuInFundal below).
+ * because the page lays it behind its own content (the card page, sigiliuInFundal below). `eticheta`: what the page is,
+ * beside the wordmark ("Contact card", 2026-10-31).
  */
-export function montezBanda(lata = false, faraSigiliu = false): void {
+export function montezBanda(lata = false, faraSigiliu = false, eticheta = ""): void {
   const main = document.querySelector<HTMLElement>(".pagina-link");
   if (!main) return;
   document.getElementById("marca")?.remove();
   if (lata) main.classList.add("lata");
   const b = document.createElement("header");
   b.className = "banda-link";
-  b.innerHTML = `<canvas class="banda-cifru" aria-hidden="true"></canvas>${faraSigiliu ? "" : `<canvas aria-hidden="true"></canvas>`}<span class="marca">${marcaSvg(38, aplicatie.nume)}</span>`;
+  b.innerHTML = `<canvas class="banda-cifru" aria-hidden="true"></canvas>${faraSigiliu ? "" : `<canvas aria-hidden="true"></canvas>`}<span class="marca">${marcaSvg(38, aplicatie.nume)}${eticheta ? `<span class="marca-eticheta">${eticheta.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)}</span>` : ""}</span>`;
   document.body.prepend(b);
   const [cc, c] = b.querySelectorAll("canvas");
-  const optiuni = { x: 0.86, y: 0.56, r: 0.42, fond: 0 };
+  // With a label on a phone the seal moves a little right and shrinks, so the label fits between it and the wordmark
+  // (acte.css, .marca-eticheta, places the label from these numbers).
+  const optiuni = eticheta && innerWidth < 600 ? { x: 0.93, y: 0.56, r: 0.34, fond: 0 } : { x: 0.86, y: 0.56, r: 0.42, fond: 0 };
   let opresteC = cifruFond(cc, { umple: !faraMiscare(), alfa: 0.16 });
   let opreste = c ? gravura(c, { ...optiuni, deseneaza: !faraMiscare() }) : () => {};
   // Redrawn whole when the window's width changes enough to matter (a phone turned, a window resized), or the band's
