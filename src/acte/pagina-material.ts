@@ -42,8 +42,8 @@ export function montezBanda(lata = false, faraSigiliu = false): void {
 
 /**
  * The seal large and faint behind the whole page, centred on `tinta` (the card page's QR code, 2026-10-30: "make it the
- * background", "center the QR inside the seal"), its ring just clear of the target's corners. Without a target (a phone
- * shows no QR code), low under the words. The canvas covers the document, not the window, so the seal scrolls with
+ * background", "center the QR inside the seal"), its ring just clear of the target's corners. Without a target, low under
+ * the words (the card page no longer asks for that: on a phone its seal stays in the band). The canvas covers the document, not the window, so the seal scrolls with
  * what it frames.
  */
 export function sigiliuInFundal(tinta: Element | null): void {

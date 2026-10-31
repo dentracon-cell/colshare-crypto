@@ -10,9 +10,12 @@ import { piciorHtml } from "./legal.ts";
 import { montezBanda, sigiliuInFundal } from "./pagina-material.ts";
 
 punLimba(limbaTelefonului());
-// The link pages' night band with the wordmark (as /p/ and /a/), so a card reads as Colshare's at a glance; the seal
-// lies behind the page instead, around the QR code (below).
-montezBanda(false, true);
+// On a computer (a fine pointer), the card as a QR code, to carry it to the phone.
+const peCalculator = matchMedia("(pointer: fine)").matches;
+// The link pages' night band with the wordmark (as /p/ and /a/), so a card reads as Colshare's at a glance. On a
+// computer the seal lies behind the page instead, around the QR code (below); a phone has no QR code, and a seal behind
+// the words made them hard to read (2026-10-31), so there it stays in the band, as on /p/ and /a/.
+montezBanda(false, peCalculator);
 const el = document.getElementById("pagina")!;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const tt = (k: Cheie, v?: Record<string, string | number>) => esc(t(k, v));
@@ -29,8 +32,7 @@ if (!carte) {
 } else {
   // The card doubles as an invitation (2026-10-30): who gave it and what Colshare is come first; on an Android phone,
   // once the app is on Google Play, getting it is the one thing to do, since a phone that has it opens the link in the
-  // app and never shows this page. On a computer (a fine pointer), the card as a QR code, to carry it to the phone.
-  const peCalculator = matchMedia("(pointer: fine)").matches;
+  // app and never shows this page.
   const play = cuPlay();
   const copiez = `<button class="buton-ton copiez" id="copiez">${tt("trimit.copiez")}</button>`;
   // On a computer the page is wide (the band's wordmark moves with it) and the QR code stands beside the text, so the
@@ -46,7 +48,7 @@ if (!carte) {
     // In a wide window the caption goes on the footer's line, under the code, level with the legal links (2026-10-30).
     ? `<div class="o-subsol">${piciorHtml(true)}<p class="o-qr-jos">${tt("o.qr")}</p></div>`
     : piciorHtml(true)}`;
-  sigiliuInFundal(el.querySelector(".o-qr .qr"));
+  if (peCalculator) sigiliuInFundal(el.querySelector(".o-qr .qr"));
   document.getElementById("copiez")!.addEventListener("click", async (e) => {
     const b = e.currentTarget as HTMLButtonElement;
     try {
