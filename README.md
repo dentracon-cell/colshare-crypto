@@ -65,6 +65,9 @@ npm run pagini
 `package.json`). `npm run pagini -- --scrie` also writes the built files to `dist/`, to read or diff them. If a line
 says "DIFFERENT", the site changed after this repo was last updated, or something is wrong. Either way, please tell us.
 
+The same comparison runs every day here, as the GitHub Action `Live pages` (`.github/workflows/pagini.yml`), and its runs
+are public.
+
 You can also watch the key stay in your browser. Open a link with the developer tools' Network tab open: the requests
 carry the link's id, never the part after the `#`.
 

@@ -1,0 +1,31 @@
+name: Live pages
+
+# Builds colshare.app's six link pages from this repository and compares each byte with what the site serves
+# (scripts/pagini.mjs), every day and in public. A failed run means the site and this code differ.
+on:
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pagini:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Pinned to commits (v5), so a moved tag can't change what runs here.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+
+      - name: The pages colshare.app serves are built from this code
+        run: npm run pagini
