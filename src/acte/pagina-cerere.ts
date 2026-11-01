@@ -46,6 +46,7 @@ const ICO: Record<string, string> = {
   ok: '<path d="M5 12l5 5L20 7"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   scut: '<path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   lacat: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   sageata: '<path d="M5 12h14M13 6l6 6-6 6"/>',
@@ -146,10 +147,15 @@ function laTelefon(): string {
   return `<div class="la-telefon"><span class="qr-mic">${svgQr(LINK, 140)}</span><span class="la-telefon-text"><b>${ico("telefon")}${tt("a.qr.titlu")}</b><small>${tt("a.qr.text")}</small></span></div>`;
 }
 
-/** A person's ask: the name they typed, said as theirs, in the same note as the warning (one note, not three lines). */
+/**
+ * A person's ask: the name they typed, said as theirs, in the same note as the warning (one note, not three lines). The
+ * name leads on its own line, in its own colour, under a label that says the link gave it and nobody checked it
+ * (Cristian, 2026-11-01: "the name needs to be a different colour"); the warning follows. The info sign, not the shield:
+ * the shield is a checked firm's (round 11, L2).
+ */
 function atentie(): string {
   if (!adresa || adresa.fel !== "cerere" || firma) return "";
-  return `<p class="banda">${adresa.text.de ? `${tt("a.cine", { nume: adresa.text.de })} ${tt("a.niciodata", { app: aplicatie.nume })}` : tt("a.atentie", { app: aplicatie.nume })}</p>`;
+  return `<p class="banda atentie-cerere">${ico("info")}<span>${adresa.text.de ? `<small class="cine-eticheta">${tt("a.cine.eticheta")}</small><b class="cine-nume">${esc(adresa.text.de)}</b>` : ""}${tt("a.atentie", { app: aplicatie.nume })}</span></p>`;
 }
 
 /** Slots filled at the last drawing: one just filled gets its tick with a small pop, once. */
@@ -209,16 +215,21 @@ function formular(mesaj?: string) {
   // (anyone can make a link that names a bank; security audit 2026-10-20). A firm's is checked.
   // A letter on the left (who asks, what for, the safety note, the phone's QR on a computer), the papers on the right;
   // one column on a phone.
+  // A person's ask (not a firm's letterhead over the band) gets the lower band on a phone (acte.css, body.cerere-om);
+  // the band redraws for its new height (./pagina-material.ts listens to resize).
+  if (document.body.classList.contains("cerere-om") !== !firma) {
+    document.body.classList.toggle("cerere-om", !firma);
+    dispatchEvent(new Event("resize"));
+  }
   el.innerHTML = `<div class="pg-cerere">
     <div class="cerere-scrisoare">
     ${cineCere()}
     <h1>${esc(firma ? (ce.length ? nr(ce.length, "a.cerut.unu", "a.cerut.n", { firma: firma.firma }) : t("a.titlu.firma", { firma: firma.firma })) : t("a.titlu"))}</h1>
-    ${titlu ? `<p class="cerere-pentru">${tt("a.pentru", { titlu: mare(titlu) })}</p>` : ""}
+    ${titlu && ce.length ? `<p class="cerere-pentru">${tt("a.pentru", { titlu: mare(titlu) })}</p>` : ""}
     ${adresa.text.nota ? `<figure class="cerere-nota"><figcaption>${firma ? tt("a.nota.firma", { firma: firma.firma }) : tt("a.nota")}</figcaption><p>${esc(adresa.text.nota)}</p></figure>` : ""}
     <p class="cerere-sub">${firma ? tt("a.sub.firma") : tt("a.sub")}</p>
     ${trusaCerere ? `<details class="card card-trusa"><summary>${tt("trusa.urmeaza", { nume: trusaCerere.scurt[limbaTrusa(limbaCurenta())] })}</summary>${htmlTrusa(trusaCerere, 3)}</details>` : ""}
     ${atentie()}
-    <p class="criptat">${ico("lacat")}${firma ? tt("a.criptat.firma", { firma: firma.firma }) : tt("a.criptat")}</p>
     ${laTelefon()}
     </div>
     <div class="cerere-acte">
@@ -230,6 +241,7 @@ function formular(mesaj?: string) {
     ${DE_LA_FIRMA ? `<label class="camp-text">${firma ? tt("a.mesaj", { firma: firma.firma }) : tt("a.mesaj.gol")}<textarea id="mesaj" rows="3" maxlength="500" placeholder="${tt("a.mesaj.loc")}">${esc(notaClient)}</textarea></label>` : ""}
     ${mesaj ? `<p class="banda rau">${esc(mesaj)}</p>` : ""}
     <button class="buton-sigiliu" id="trimit"${total ? "" : " disabled"}>${ico("lacat")}<span>${total ? tt(total === 1 ? "a.trimit.unu" : "a.trimit.n", { n: total }) : tt("a.trimit")}</span>${ico("sageata")}</button>
+    <p class="criptat">${ico("lacat")}${firma ? tt("a.criptat.firma", { firma: firma.firma }) : tt("a.criptat")}</p>
     </div>
   </div>${invit}`;
   umplute = new Set(sloturi.map((s, i) => (s.piese.length ? i : -1)).filter((i) => i >= 0));
