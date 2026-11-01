@@ -6,7 +6,7 @@ import type { LinieText } from "./innegrire.ts";
 
 /** The part of pdf.js used here. */
 export interface PdfJs {
-  getDocument(src: { data: Uint8Array; standardFontDataUrl?: string; isEvalSupported?: boolean; useSystemFonts?: boolean }): { promise: Promise<DocPdf>; destroy(): Promise<void> };
+  getDocument(src: { data: Uint8Array; standardFontDataUrl?: string; isEvalSupported?: boolean; useSystemFonts?: boolean; maxImageSize?: number }): { promise: Promise<DocPdf>; destroy(): Promise<void> };
   Util: { transform(a: number[], b: number[]): number[] };
 }
 interface DocPdf {
@@ -38,11 +38,14 @@ export interface PaginaRandata<C extends PanzaPdf = PanzaPdf> {
 
 /** Pages drawn at most this large on their longer side (A4 at 200 dpi is 2339). */
 const MAX_LATURA = 2400;
+/** An image larger than this many pixels inside a PDF is refused before it is decoded: no scan has one (600 dpi A4 is
+ * 35 million), and a crafted one held pdf.js for seconds (attack test 2026-11-01, round 8, L8-2), as core/pdf-text.ts. */
+const MAX_PIXELI_IMAGINE = 50_000_000;
 /** Letters and digits a page needs for its text layer to stand for it. */
 const MIN_TEXT = 30;
 
 export async function randeazaPdf<C extends PanzaPdf>(pdfjs: PdfJs, date: Uint8Array, panza: (w: number, h: number) => C, o: { dpi?: number; standardFontDataUrl?: string; maxPagini?: number } = {}): Promise<PaginaRandata<C>[]> {
-  const sarcina = pdfjs.getDocument({ data: date.slice(), isEvalSupported: false, useSystemFonts: true, ...(o.standardFontDataUrl ? { standardFontDataUrl: o.standardFontDataUrl } : {}) });
+  const sarcina = pdfjs.getDocument({ data: date.slice(), isEvalSupported: false, useSystemFonts: true, maxImageSize: MAX_PIXELI_IMAGINE, ...(o.standardFontDataUrl ? { standardFontDataUrl: o.standardFontDataUrl } : {}) });
   const doc = await sarcina.promise;
   const out: PaginaRandata<C>[] = [];
   try {
@@ -79,7 +82,7 @@ export async function randeazaPdf<C extends PanzaPdf>(pdfjs: PdfJs, date: Uint8A
  * page at most `latura` pixels on its longer side, handed to `pagina` as soon as it is drawn.
  */
 export async function desenezPaginile<C extends PanzaPdf>(pdfjs: PdfJs, date: Uint8Array, panza: (w: number, h: number) => C, pagina: (c: C, n: number, total: number) => Promise<boolean | void> | boolean | void, o: { latura?: number; maxPagini?: number; standardFontDataUrl?: string } = {}): Promise<number> {
-  const sarcina = pdfjs.getDocument({ data: date.slice(), isEvalSupported: false, useSystemFonts: true, ...(o.standardFontDataUrl ? { standardFontDataUrl: o.standardFontDataUrl } : {}) });
+  const sarcina = pdfjs.getDocument({ data: date.slice(), isEvalSupported: false, useSystemFonts: true, maxImageSize: MAX_PIXELI_IMAGINE, ...(o.standardFontDataUrl ? { standardFontDataUrl: o.standardFontDataUrl } : {}) });
   const doc = await sarcina.promise;
   const total = Math.min(doc.numPages, o.maxPagini ?? 300);
   try {

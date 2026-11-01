@@ -13,6 +13,7 @@ import { piciorHtml } from "./legal.ts";
 import { punLimba, limbaPaginii, t, type Cheie } from "./limba.ts";
 import { invitatie } from "./lansare.ts";
 import { imagineSigura } from "./marime-imagine.ts";
+import { desenezPaginile, type PdfJs } from "./pdf-pagini.ts";
 
 punLimba(limbaPaginii());
 // One night scene above the paper carries the whole opening: the app's entrance lock waiting (a hand or the mouse turns its
@@ -101,6 +102,7 @@ const ICO: Record<string, string> = {
   ochi: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   ceas: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   ok: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
   foi: '<path d="M8 3h8l4 4v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M4 7v12a3 3 0 0 0 3 3h9"/>',
 };
 const ico = (n: string) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICO[n]}</svg>`;
@@ -138,7 +140,7 @@ function lista(titlu: string | undefined, fisiere: FisierPachet[], cine = "") {
   arata(`<div class="p-deschis"><h1>${tt("p.titlu")}</h1>${cine}${titlu ? `<p class="nota">${tt("p.de-la", { titlu })}</p>` : ""}
     <p class="p-salveaza" role="note">${ico("ceas")}<span>${tt("p.salveaza")}</span></p>
     <ul class="hartii${unul ? " unul" : ""}">${fisiere.map((f, i) => `<li style="--i:${i}" data-hartie="${i}"><span class="hartie-nr" aria-hidden="true">${nr(i)}</span>${chip(f, i)}<span class="hartie-text"><b>${esc(f.nume)}</b><span class="hartie-meta">${fel(f)} · ${marime(f.date.length)}</span>${verific(f)}</span>
-      <span class="hartie-act">${f.tip.startsWith("image/") && !poza(f) ? "" : `<a class="buton-ton" href="${urls[i]}" target="_blank" rel="noopener">${ico("ochi")}<span>${tt("p.vad")}</span></a>`}
+      <span class="hartie-act">${f.tip.startsWith("image/") && !poza(f) ? "" : `<button type="button" class="buton-ton" data-vad="${i}">${ico("ochi")}<span>${tt("p.vad")}</span></button>`}
       <a class="${salvez}" href="${urls[i]}" download="${esc(f.nume)}">${ico("jos")}<span>${tt("p.descarc")}</span></a></span></li>`).join("")}</ul>
     ${fisiere.length > 1 ? `<button class="buton-sigiliu" id="toate">${ico("jos")}${tt("p.toate")}</button>` : ""}</div>${invit()}`);
   // A paper saved is ticked off on its tile, so a long list shows what is still to save.
@@ -149,9 +151,118 @@ function lista(titlu: string | undefined, fisiere: FisierPachet[], cine = "") {
     a.querySelector("svg")!.outerHTML = ico("ok");
   };
   for (const a of el.querySelectorAll<HTMLAnchorElement>("a[download]")) a.addEventListener("click", () => bifez(a));
+  for (const b of el.querySelectorAll<HTMLButtonElement>("[data-vad]")) {
+    const i = Number(b.dataset.vad);
+    b.addEventListener("click", () => vad(fisiere[i], urls[i], () => bifez(el.querySelector<HTMLAnchorElement>(`[data-hartie="${i}"] a[download]`)!), b));
+  }
+  // Measured again once the title font is in, since a fallback font is narrower.
+  const titluH = el.querySelector<HTMLElement>(".p-deschis h1");
+  potrivescTitlul(titluH);
+  void document.fonts?.ready.then(() => potrivescTitlul(titluH));
   document.getElementById("toate")?.addEventListener("click", () => {
     for (const a of el.querySelectorAll<HTMLAnchorElement>("a[download]")) a.click();
   });
+}
+
+/** pdf.js, from the desk's files on this site, the first time a PDF is looked at here (as the ask page loads it). */
+let pdfjs: Promise<PdfJs> | undefined;
+function incarcPdfJs(): Promise<PdfJs> {
+  const baza = new URL("/birou/pdf/", location.href).href;
+  pdfjs ??= (import(/* @vite-ignore */ `${baza}pdf.min.mjs`) as Promise<PdfJs & { GlobalWorkerOptions: { workerSrc: string } }>).then((m) => {
+    m.GlobalWorkerOptions.workerSrc = `${baza}pdf.worker.min.mjs`;
+    return m;
+  });
+  pdfjs.catch(() => { pdfjs = undefined; });
+  return pdfjs;
+}
+/** The most pages a PDF shows here; Save keeps the whole file. */
+const PAGINI_VAD = 100;
+
+/**
+ * A paper looked at on this page, before it is saved. "View" used to open the file in a new tab, which a phone's
+ * browser turns into a download for a PDF (Android's Chrome has no PDF reader) and an app's in-app browser may not open
+ * at all. Now the page shows it over itself: a picture as it is, a PDF drawn page by page by pdf.js, nothing kept once
+ * it closes. Save stays in its bar. If pdf.js cannot be loaded, the file opens in a new tab as before.
+ */
+function vad(f: FisierPachet, url: string, salvat: () => void, inapoi: HTMLElement) {
+  const pdf = f.tip === "application/pdf";
+  const v = document.createElement("div");
+  v.className = "p-vad";
+  v.setAttribute("role", "dialog");
+  v.setAttribute("aria-modal", "true");
+  v.setAttribute("aria-label", f.nume);
+  v.innerHTML = `<header class="p-vad-cap"><b>${esc(f.nume)}</b><span class="p-vad-pag" aria-live="polite"></span>
+    <a class="buton-ton" href="${url}" download="${esc(f.nume)}">${ico("jos")}<span>${tt("p.descarc")}</span></a>
+    <button type="button" class="p-vad-inchid" aria-label="${tt("inchid")}">${ico("x")}</button></header>
+    <div class="p-vad-pagini">${pdf ? `<p class="p-vad-lucrez">${tt("a.pdf.lucrez")}</p>` : `<img src="${url}" alt="${esc(f.nume)}">`}</div>`;
+  document.body.append(v);
+  document.documentElement.classList.add("p-vad-deschis");
+  let deschis = true;
+  // The phone's Back closes the viewer, not the page (the link is already used): the viewer is a step in the history
+  // (attack test 2026-11-01, round 8, L8-3).
+  history.pushState({ pVad: true }, "");
+  const laInapoi = () => inchid(true);
+  addEventListener("popstate", laInapoi);
+  /** The PDF's pages as pictures, let go when the viewer closes. */
+  const urluri: string[] = [];
+  const inchid = (dinIstoric = false) => {
+    if (!deschis) return;
+    deschis = false;
+    // The drawn pages go with the viewer: no picture of the paper stays in the page.
+    for (const c of v.querySelectorAll("canvas")) c.width = c.height = 0;
+    for (const u of urluri) URL.revokeObjectURL(u);
+    v.remove();
+    document.documentElement.classList.remove("p-vad-deschis");
+    document.removeEventListener("keydown", tasta);
+    removeEventListener("popstate", laInapoi);
+    if (!dinIstoric && (history.state as { pVad?: boolean } | null)?.pVad) history.back();
+    inapoi.focus();
+  };
+  const tasta = (e: KeyboardEvent) => { if (e.key === "Escape") inchid(); };
+  // Each drawn page is kept as a JPEG and its canvas let go at once: a hundred live 1600 px canvases asked for about a
+  // gigabyte, enough to have a phone's browser killed after the link was used (attack test 2026-11-01, round 8, M8-1).
+  const paginaCaPoza = (c: HTMLCanvasElement, n: number, total: number) => new Promise<boolean | void>((ok) => {
+    if (!deschis) { c.width = c.height = 0; ok(false); return; }
+    c.toBlob((b) => {
+      c.width = c.height = 0;
+      if (!deschis) { ok(false); return; }
+      if (n === 1) loc.textContent = "";
+      if (b) {
+        const u = URL.createObjectURL(b), img = document.createElement("img");
+        urluri.push(u);
+        img.decoding = "async";
+        img.alt = t("pdf.pagina", { n, total });
+        img.src = u;
+        loc.append(img);
+      }
+      pag.textContent = t("pdf.pagina", { n, total });
+      ok();
+    }, "image/jpeg", 0.85);
+  });
+  document.addEventListener("keydown", tasta);
+  v.querySelector(".p-vad-inchid")!.addEventListener("click", () => inchid());
+  v.querySelector("a[download]")!.addEventListener("click", salvat);
+  v.querySelector<HTMLElement>(".p-vad-inchid")!.focus();
+  if (!pdf) return;
+  const loc = v.querySelector<HTMLElement>(".p-vad-pagini")!, pag = v.querySelector<HTMLElement>(".p-vad-pag")!;
+  void incarcPdfJs().then((js) => desenezPaginile(js, f.date, (w, h) => Object.assign(document.createElement("canvas"), { width: w, height: h }), paginaCaPoza, { latura: 1600, maxPagini: PAGINI_VAD })).catch(() => {
+    if (!deschis) return;
+    inchid();
+    window.open(url, "_blank", "noopener");
+  });
+}
+
+/**
+ * The heading on one line (Cristian, 2026-11-01): on a narrow phone it is set smaller until it fits, down to 20 px,
+ * and only a language too long even then wraps.
+ */
+function potrivescTitlul(h: HTMLElement | null) {
+  if (!h) return;
+  h.style.whiteSpace = "nowrap";
+  h.style.fontSize = "";
+  let px = parseFloat(getComputedStyle(h).fontSize);
+  while (h.scrollWidth > h.clientWidth && px > 20) h.style.fontSize = `${(px -= 1)}px`;
+  if (h.scrollWidth > h.clientWidth) h.style.whiteSpace = "";
 }
 
 if (!adresa || adresa.fel !== "link") {

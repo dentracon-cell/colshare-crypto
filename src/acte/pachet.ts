@@ -39,8 +39,17 @@ export interface Pachet {
    * "A link can carry the sender's card"): sealed with the link's key like the rest, so the relay can't swap it.
    */
   carte?: string;
+  /**
+   * Papers in this package that are copies the sender's desk made (decisions.md 2026-11-01, "A copy stays with its
+   * original"), sent to the person's own other device: which file (its place), the paper it was made from by the name
+   * both devices give it (its `ref`), and for a marked copy what its marking says. Signed with the files when present.
+   */
+  copii?: CopieInPachet[];
   fisiere: FisierPachet[];
 }
+
+/** One copy in a package: file `i`, made from the paper both devices call `din`; `copie` only for a marked copy. */
+export interface CopieInPachet { i: number; din: string; copie?: { pentru: string; scop: string; data: string } }
 
 interface Antet {
   v: 1;
@@ -50,7 +59,24 @@ interface Antet {
   f?: { c: string; s: string };
   c?: { p: string; client: string; titlu: string; rand: string; s: string };
   k?: string;
+  y?: CopieInPachet[];
   fisiere: { nume: string; tip: string; octeti: number }[];
+}
+
+/** The copies a header may name: each a file of the package, once, with bounded words; anything else is dropped. */
+function copiiCurate(x: unknown, nrFisiere: number): CopieInPachet[] {
+  if (!Array.isArray(x)) return [];
+  const vazute = new Set<number>(), out: CopieInPachet[] = [];
+  for (const y of x.slice(0, MAX_FISIERE) as Partial<CopieInPachet>[]) {
+    if (!y || !Number.isInteger(y.i) || y.i! < 0 || y.i! >= nrFisiere || vazute.has(y.i!) || typeof y.din !== "string" || !/^[A-Za-z0-9_/#-]{1,120}$/.test(y.din)) continue;
+    const c = y.copie;
+    const copie = c && typeof c.pentru === "string" && typeof c.scop === "string" && typeof c.data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.data)
+      ? { pentru: curat(c.pentru).slice(0, 200), scop: curat(c.scop).slice(0, 200), data: c.data } : undefined;
+    if (c && !copie) continue;
+    vazute.add(y.i!);
+    out.push({ i: y.i!, din: y.din, ...(copie ? { copie } : {}) });
+  }
+  return out;
 }
 
 /**
@@ -74,6 +100,7 @@ export function impacheteaza(p: Pachet): Uint8Array {
     v: 1, ...(p.titlu ? { titlu: p.titlu.slice(0, 300) } : {}), ...(p.de ? { de: p.de.slice(0, 120) } : {}), ...(p.nota && curatNota(p.nota) ? { o: curatNota(p.nota) } : {}), ...(p.firma ? { f: { c: p.firma.c, s: p.firma.s } } : {}),
     ...(p.coleg ? { c: { p: p.coleg.p, client: p.coleg.client.slice(0, 120), titlu: p.coleg.titlu.slice(0, 200), rand: p.coleg.rand, s: p.coleg.s } } : {}),
     ...(p.carte && p.carte.length <= MAX_CARTE ? { k: p.carte } : {}),
+    ...(copiiCurate(p.copii, p.fisiere.length).length ? { y: copiiCurate(p.copii, p.fisiere.length) } : {}),
     fisiere: p.fisiere.map((f) => {
       if (!TIPURI.test(f.tip)) throw new Error("pachet: tip de fișier greșit");
       return { nume: numeSigur(f.nume, f.tip), tip: f.tip, octeti: f.date.length };
@@ -111,6 +138,7 @@ export function despacheteaza(b: Uint8Array): Pachet {
   const nota = typeof antet.o === "string" ? curatNota(antet.o) : "";
   // The card is read as a card by whoever offers it (./oameni.ts citesteCarte); here only its size is bounded.
   const km = typeof antet.k === "string" && antet.k.length <= MAX_CARTE ? { carte: antet.k } : {};
+  const copii = copiiCurate(antet.y, fisiere.length);
   // The title and the sender's name without control or direction characters, as the link's front (./link.ts curat).
-  return { ...(typeof antet.titlu === "string" ? { titlu: curat(antet.titlu) } : {}), ...(typeof antet.de === "string" ? { de: curat(antet.de) } : {}), ...(nota ? { nota } : {}), ...fm, ...cm, ...km, fisiere };
+  return { ...(typeof antet.titlu === "string" ? { titlu: curat(antet.titlu) } : {}), ...(typeof antet.de === "string" ? { de: curat(antet.de) } : {}), ...(nota ? { nota } : {}), ...fm, ...cm, ...km, ...(copii.length ? { copii } : {}), fisiere };
 }

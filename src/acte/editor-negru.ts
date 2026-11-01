@@ -1,7 +1,8 @@
 // A box editor over one page picture (decisions.md 2026-10-30, "Black out on the ask page; marked copies from the
 // desk"): the person drags boxes over what to hide, and an ID's code lines (<<<) can be hidden with one switch, then the
 // black is painted into the picture's pixels before anything leaves the device (./innegrire.ts deseneazaNegru), so
-// nothing under a box can be uncovered. Used by the ask page (./pagina-cerere.ts) and the desk (./birou/birou.ts).
+// nothing under a box can be uncovered. Used by the ask page (./pagina-cerere.ts), the desk (./birou/birou.ts) and the
+// app's Black out and safe copy (./app.ts), where the boxes drawn by hand are drawn in it.
 // The page zooms and moves (decisions.md 2026-10-31, "Black out and marked copies on every paper"), so one line of
 // small print on a statement or a contract can be covered on its own.
 import type { Zona } from "./copie-sigura.ts";
@@ -48,6 +49,8 @@ export function inchidEditoarele(): void {
   try { for (const x of deschise) x(); } finally { faraUrma = false; }
 }
 let faraUrma = false;
+/** Whether a box editor is open (the phone's back button closes it first). */
+export const unEditorDeschis = (): boolean => deschise.size > 0;
 
 /** The editor's words, in the page's language and register. An empty `mrz` leaves the code lines' switch out. */
 export interface TexteEditor {

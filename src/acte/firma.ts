@@ -1176,7 +1176,9 @@ export async function gasescFirma(apel: ApelFirma, loc: Loc, tara: string, cui: 
 /** What a firm signs on a package it sends another firm: that inbox, that item, and the package's contents. */
 async function rezumatPachet(p: Pachet): Promise<string> {
   const fisiere = await Promise.all(p.fisiere.map(async (f) => [f.nume, f.tip, b64url(await sha256(f.date))]));
-  return b64url(await sha256(enc(JSON.stringify({ t: p.titlu ?? "", d: p.de ?? "", f: fisiere }))));
+  // The copies a package names are signed with its files (decisions.md 2026-11-01, "A copy stays with its original"),
+  // so no one who can seal to an inbox can mark a paper as a copy; a package without them signs as before.
+  return b64url(await sha256(enc(JSON.stringify({ t: p.titlu ?? "", d: p.de ?? "", f: fisiere, ...(p.copii?.length ? { y: p.copii } : {}) }))));
 }
 const textPachet = (casuta: string, item: string, h: string) => `colshare-pachet-firma-v1\n${casuta}\n${item}\n${h}`;
 
