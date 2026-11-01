@@ -6,6 +6,8 @@
 // small print on a statement or a contract can be covered on its own.
 import type { Zona } from "./copie-sigura.ts";
 import { deseneazaNegru } from "./innegrire.ts";
+import { faraMiscare } from "./material.ts";
+import { lasaInUrma } from "./trecere.ts";
 
 /** Where an ID's code lines (<<<) are on a page of these proportions: a card's back, a passport's data page (ICAO 9303). */
 export const zonaMrz = (w: number, h: number): Zona => (Math.max(w, h) / Math.min(w, h) > 1.5 ? { x: 0, y: 0.6, w: 1, h: 0.4 } : { x: 0, y: 0.72, w: 1, h: 0.28 });
@@ -40,9 +42,12 @@ const deschise = new Set<() => void>();
  * screen over the lock (attack test 2026-10-31, N5).
  */
 export function inchidEditoarele(): void {
-  // Each one takes itself out of the set as it closes, which a Set allows while it is walked.
-  for (const x of deschise) x();
+  // Each one takes itself out of the set as it closes, which a Set allows while it is walked. Closed by the lock, it
+  // leaves no fading copy of the page over the lock screen (attack test 2026-11-01, M2).
+  faraUrma = true;
+  try { for (const x of deschise) x(); } finally { faraUrma = false; }
 }
+let faraUrma = false;
 
 /** The editor's words, in the page's language and register. An empty `mrz` leaves the code lines' switch out. */
 export interface TexteEditor {
@@ -104,6 +109,8 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
       <div class="editor-butoane"><button type="button" class="buton mic text editor-anulez">${esc(x.anulez)}</button>
       <button type="button" class="buton contur editor-renunt">${esc(x.renunt)}</button><button type="button" class="buton plin editor-gata">${esc(x.gata)}</button></div></div>`;
   document.body.append(strat);
+  // It comes up instead of appearing in one frame (motion audit 2026-11-01, A12).
+  if (!faraMiscare()) strat.classList.add("intra");
   const panza = strat.querySelector<HTMLCanvasElement>(".editor-panza")!;
   const loc = strat.querySelector<HTMLElement>(".editor-loc")!;
   const tot = strat.querySelector<HTMLButtonElement>(".editor-tot")!;
@@ -115,7 +122,10 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
 
   // The canvas fills the space at the screen's own resolution; only what is in view is drawn, so zooming in never asks
   // for a canvas larger than the screen.
-  const deseneaza = () => {
+  // Drawn at most once a frame: every pointer move drew the whole page at once (motion audit 2026-11-01, A12).
+  let cadruDesen = 0;
+  const deseneaza = () => { if (!cadruDesen) cadruDesen = requestAnimationFrame(() => { cadruDesen = 0; deseneazaAcum(); }); };
+  const deseneazaAcum = () => {
     const l = spatiul(), r = devicePixelRatio || 1;
     const w = Math.max(1, Math.round(l.w * r)), h = Math.max(1, Math.round(l.h * r));
     if (panza.width !== w || panza.height !== h) { panza.width = w; panza.height = h; }
@@ -207,8 +217,22 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
     if (e.ctrlKey || e.metaKey) zoomLa(v.s * Math.exp(-e.deltaY * k * 0.0025), inSpatiu(e));
     else pun({ s: v.s, x: v.x - (e.shiftKey ? e.deltaY : e.deltaX) * k, y: v.y - (e.shiftKey ? 0 : e.deltaY) * k });
   }, { passive: false });
-  strat.querySelector(".editor-plus")!.addEventListener("click", () => zoomLa(v.s * PAS));
-  strat.querySelector(".editor-minus")!.addEventListener("click", () => zoomLa(v.s / PAS));
+  // + and − glide to the new zoom over 200 ms instead of jumping; the wheel and the fingers follow the hand directly.
+  let cadruZoom = 0;
+  const zoomLin = (s: number) => {
+    const p = { x: spatiul().w / 2, y: spatiul().h / 2 }, tinta = zoomez(v, s, p.x, p.y, potrivit());
+    cancelAnimationFrame(cadruZoom);
+    if (faraMiscare()) { pun(tinta); return; }
+    const de = { ...v }, t0 = performance.now();
+    const pas = (acum: number) => {
+      const k = Math.min(1, (acum - t0) / 200), e = 1 - (1 - k) ** 3;
+      pun({ s: de.s + (tinta.s - de.s) * e, x: de.x + (tinta.x - de.x) * e, y: de.y + (tinta.y - de.y) * e });
+      if (k < 1) cadruZoom = requestAnimationFrame(pas);
+    };
+    cadruZoom = requestAnimationFrame(pas);
+  };
+  strat.querySelector(".editor-plus")!.addEventListener("click", () => zoomLin(v.s * PAS));
+  strat.querySelector(".editor-minus")!.addEventListener("click", () => zoomLin(v.s / PAS));
   tot.addEventListener("click", () => pun({ s: potrivit(), x: 0, y: 0 }));
   strat.querySelector<HTMLInputElement>(".editor-mrz")?.addEventListener("change", (e) => { mrz = (e.target as HTMLInputElement).checked; deseneaza(); });
   strat.querySelector(".editor-anulez")!.addEventListener("click", () => { manual.pop(); deseneaza(); });
@@ -236,6 +260,8 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
       removeEventListener("resize", laRedim);
       document.documentElement.style.overflow = sus;
       for (const b of blocate) b.inert = false;
+      // It fades as it closes, from a still copy, instead of vanishing in one frame (A12).
+      if (!faraMiscare() && !faraUrma) lasaInUrma(strat, "editor-pleaca", 200);
       strat.remove();
       inapoi?.focus();
       ok(r);
@@ -248,8 +274,8 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
       // Escape never throws away boxes drawn: with any, it is Done; with none, it cancels (attack test 2026-10-30, N4).
       if (e.key === "Escape") { e.stopPropagation(); inchid(manual.length || mrz ? { manual, mrz } : undefined); }
       else if ((e.target as HTMLElement).tagName === "INPUT") return;
-      else if (e.key === "+" || e.key === "=") zoomLa(v.s * PAS);
-      else if (e.key === "-") zoomLa(v.s / PAS);
+      else if (e.key === "+" || e.key === "=") zoomLin(v.s * PAS);
+      else if (e.key === "-") zoomLin(v.s / PAS);
       else if (e.key === "0") pun({ s: potrivit(), x: 0, y: 0 });
     });
   });

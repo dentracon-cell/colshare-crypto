@@ -37,10 +37,26 @@ document.title = `${t("p.titlu")} · ${aplicatie.nume}`;
 function arata(html: string) {
   el.innerHTML = html;
 }
-/** What the scene shows (the seal and its words); `jos`: what the paper under it shows. */
+/**
+ * What the scene shows (the seal and its words); `jos`: what the paper under it shows. A lock already in the scene
+ * stays where it is and only the words round it change: put back, it faded in again and its tape restarted (motion
+ * audit 2026-11-01, L3).
+ */
 function inScena(html: string, jos = invit()) {
-  scena.continut.innerHTML = html;
-  punLacat(scena.continut, lacat);
+  const c = scena.continut;
+  if (lacat.el.parentElement === c && html.includes('class="loc-lacat"')) {
+    const t = document.createElement("template");
+    t.innerHTML = html;
+    const loc = t.content.querySelector(".loc-lacat")!, inainte: Node[] = [], dupa: Node[] = [];
+    let trecut = false;
+    for (const n of Array.from(t.content.childNodes)) { if (n === loc) trecut = true; else (trecut ? dupa : inainte).push(n); }
+    for (const n of Array.from(c.childNodes)) if (n !== lacat.el) n.remove();
+    lacat.el.before(...inainte);
+    lacat.el.after(...dupa);
+  } else {
+    c.innerHTML = html;
+    punLacat(c, lacat);
+  }
   arata(jos);
 }
 
@@ -49,6 +65,7 @@ function eroare(e: unknown, dinNou?: () => void) {
   const cod = e instanceof EroareRelay ? e.cod : undefined;
   // A link used or gone is a fact, not an error: the mark says it (the halves parted, or an empty outline).
   scena.cifru(false);
+  document.querySelector(".pagina-link")?.classList.remove("in-asteptare");
   // The lock leaves the scene: its frames and listeners stop, and a retry dials a fresh one.
   lacat.opreste();
   lacat = scenaLacat();
@@ -113,8 +130,9 @@ function lista(titlu: string | undefined, fisiere: FisierPachet[], cine = "") {
   // and the papers are on the page below, left-aligned, with nothing drawn behind them (2026-10-31, "too much clutter").
   scena.cifru(false);
   lacat.opreste();
-  scena.continut.innerHTML = "";
   scena.restrang(t("p.eticheta"));
+  scena.continut.innerHTML = "";
+  document.querySelector(".pagina-link")?.classList.remove("in-asteptare");
   const nr = (i: number) => String(i + 1).padStart(2, "0");
   const unul = fisiere.length === 1;
   arata(`<div class="p-deschis"><h1>${tt("p.titlu")}</h1>${cine}${titlu ? `<p class="nota">${tt("p.de-la", { titlu })}</p>` : ""}
@@ -147,6 +165,8 @@ if (!adresa || adresa.fel !== "link") {
     // The lock dials as the papers come down through the ciphertext field, a notch a sixth, then springs open: the bolt
     // gives, the seal parts along the slit and the list comes up. A retry gets a fresh lock (eroare makes one).
     scena.cifru(true);
+    // The page under the scene is not shown while the papers come down: the fold then brings it in where it stays.
+    document.querySelector(".pagina-link")?.classList.add("in-asteptare");
     let notch = 0;
     inScena(`<div class="loc-lacat"></div><p class="progres" id="progres">${tt("p.lucrez", { p: 0 })}</p><span class="bara-scena"><span id="bara"></span></span>`, "");
     try {

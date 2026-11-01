@@ -20,9 +20,12 @@ const SIR = Array.from({ length: 997 }, (_, i) => B64[Math.floor(hash(i * 3.3 + 
 /** The dial's hundred marks; its outer edge (the numbers) at RX of the seal's size. */
 const PAS = 3.6, RX = 0.9;
 /** From the right PIN: the dial settles and the bolt gives; the seal starts to part; the papers come up as the halves
- * leave, not once they are gone (an empty screen stood between them, 2026-10-25) (ms). */
-const ZAVOR = 450, PARTE = 520, GATA = 920;
-const liniste = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+ * leave, not once they are gone (an empty screen stood between them, 2026-10-25) (ms). At 920 ms the halves (650 ms
+ * from 520) were cut at 61% of their way; at 1100 they are nearly out, and what replaces the lock fades in over them
+ * (motion audit 2026-11-01, A2). */
+const ZAVOR = 450, PARTE = 520, GATA = 1100;
+/** The phone's reduced motion, or the app's own Settings › Less motion (html.putina-miscare). */
+const liniste = () => matchMedia("(prefers-reduced-motion: reduce)").matches || document.documentElement.classList.contains("putina-miscare");
 
 export interface ScenaLacat {
   readonly el: HTMLElement;
@@ -67,7 +70,7 @@ export function scenaLacat(): ScenaLacat {
   // The dial: where a hand or the tilt put it, the combination typed, and the angle drawn.
   let mana = 0, inclinare = 0, comb = 0, tastat = 0, unghi = 0, inel = 0, k = 0.22;
   let curge = 0, unghiB = 0, ultim = 0, cadru = 0, oprit = false, g0: number | null = null;
-  let seRoteste = false, ultimaRotire = -Infinity, asteptand = false;
+  let seRoteste = false, ultimaRotire = -Infinity, asteptand = false, amanare: "nu" | "asteapta" | "gata" = "nu";
   const font = (p: number) => `500 ${p}px "Martian Mono", ui-monospace, monospace`;
 
   const panza = (w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D | null] => {
@@ -314,7 +317,17 @@ export function scenaLacat(): ScenaLacat {
     potriveste() {
       const w = el.clientWidth, h = el.clientHeight;
       if (!w || !h) return;
-      if (Math.abs(w - W) > 1 || Math.abs(h - H) > 1) { W = w; H = h; construieste(); }
+      if (Math.abs(w - W) > 1 || Math.abs(h - H) > 1) {
+        // The first drawing waits until the screen around it has been painted, then the dial fades in: drawing it
+        // takes a phone a few hundred milliseconds, which held the whole screen back (motion audit 2026-11-01, A3).
+        if (!W && misca && amanare !== "gata") {
+          if (amanare === "nu") requestAnimationFrame(() => setTimeout(() => { amanare = "gata"; if (!oprit) scena.potriveste(); }));
+          amanare = "asteapta";
+          return;
+        }
+        W = w; H = h; construieste();
+        el.classList.add("desenat");
+      }
       porneste();
     },
     tasta(n) {

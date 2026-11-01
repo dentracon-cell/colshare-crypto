@@ -7,6 +7,7 @@ import { cifruFond } from "./cifru-fond.ts";
 import { gravura } from "./gravura.ts";
 import { faraMiscare } from "./material.ts";
 import type { ScenaLacat } from "./seif-lacat.ts";
+import { lasaInUrma } from "./trecere.ts";
 import { geometrie, marcaSvg, R_INEL, sigiliuSvg } from "./sigiliu.ts";
 
 /**
@@ -139,12 +140,17 @@ export function montezScena(): { continut: HTMLElement; cifru: (activ: boolean) 
     cifru: (activ) => {
       opresteC();
       s.classList.toggle("cifreaza", activ);
-      opresteC = cifruFond(c, activ ? { activ: true, umple: true, alfa: 0.2 } : { alfa: ALFA });
+      // Brightening, the field grows from the faint one already there instead of clearing first (motion audit 2026-11-01, L3).
+      opresteC = cifruFond(c, activ ? { activ: true, umple: true, alfa: 0.2, din: ALFA } : { alfa: ALFA });
     },
     restrang: (eticheta = "") => {
       // The scene becomes the band the other link pages have: the words move to the page below, the canvases shrink to
       // the band (so nothing is drawn behind the papers), and both are drawn again at that size, whole, never stretched.
+      // The night as it stood is left over the page as a still copy that rises to the band's height and fades there,
+      // so the fold is one motion over a page already laid out (it was a cut, layout shift 0.745; motion audit, L1).
+      const perdea = faraMiscare() ? undefined : lasaInUrma(s, "scena-pliere", 640);
       s.classList.add("restransa");
+      perdea?.style.setProperty("--banda", `${s.offsetHeight}px`);
       if (eticheta) {
         const m = s.querySelector(".marca")!;
         m.querySelector(".marca-eticheta")?.remove();

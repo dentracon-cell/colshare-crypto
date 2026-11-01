@@ -28,6 +28,11 @@ export interface OptiuniCifru {
   umple?: boolean;
   /** The characters' strength at rest. */
   alfa?: number;
+  /**
+   * With `umple`: the strength the field already had where the fill has not reached yet, so a field that brightens
+   * (the link page's, when the papers start coming down) grows from what was there instead of clearing first.
+   */
+  din?: number;
 }
 
 /** Stops the field's frames; `unda` starts a wave at (x, y), in the canvas's own pixels. */
@@ -84,8 +89,9 @@ export function cifruFond(c: HTMLCanvasElement, o: OptiuniCifru = {}): CampCifru
         const i = y * col + x, px = x * LAT;
         let ch = text[i % text.length], a = alfa, ocru = false;
         const f = (p - (x / col) * 0.8 - hash(y * 31.7 + x * 7.3) * 0.12) * 5;
-        if (f <= 0) { scrie(py); continue; }
-        if (f < 1) { a = 0.45; ch = B64[Math.floor(hash(i + acum * 0.01) * 64)]; }
+        if (f <= 0 && !o.din) { scrie(py); continue; }
+        if (f <= 0) a = o.din!;
+        else if (f < 1) { a = 0.45; ch = B64[Math.floor(hash(i + acum * 0.01) * 64)]; }
         else if (trecute || unde.length) {
           // Reached a little before or after the edge, then running for a time of its own: the scrambles that have
           // let it settle set its character; one still running keeps it changing.

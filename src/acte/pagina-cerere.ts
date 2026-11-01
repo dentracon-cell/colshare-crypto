@@ -7,6 +7,7 @@
 // firm's ask, a slot's photos become one PDF here, on the phone, a page each: firms file PDFs. A person's ask keeps
 // the photos as pictures (the app reads ID cards from them).
 import { BUCATA, citesteAdresa, curatNota, EroareRelay, MAX_BUCATI, relay, trimitInCerere } from "./link.ts";
+import { lasaInUrma } from "./trecere.ts";
 import { impacheteaza, type FisierPachet } from "./pachet.ts";
 import { pdfDinPagini } from "../core/scanner/pdf.ts";
 import aplicatie from "./aplicatie.json";
@@ -402,8 +403,11 @@ async function trimit() {
     sloturi = [];
     altDeschis = false;
     notaClient = "";
+    // Sealed and sent: on the same night card, the seal comes down whole on what went, over the field now still. The
+    // sending card fades out under it instead of being swapped in one frame (motion audit 2026-11-01, L5).
+    const carte = el.firstElementChild;
+    if (carte && !faraMiscare()) lasaInUrma(carte, "trec-alaturi", 220);
     opresteCifru();
-    // Sealed and sent: on the same night card, the seal comes down whole on what went, over the field now still.
     el.innerHTML = `<div class="pg-cerere trimis">
       <section class="sigilat"><canvas class="cifru-trimit" aria-hidden="true"></canvas>
       ${sigiliuApasat(132)}
