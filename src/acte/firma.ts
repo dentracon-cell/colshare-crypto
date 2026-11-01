@@ -196,6 +196,8 @@ export interface StareFirma {
   /** The licence e-mail, and the address clients' replies go to when the firm confirmed another. */
   email?: string;
   raspuns?: string;
+  /** False when the firm turned off the e-mail sent when papers wait untaken (colshare-web/api/_firme/anunt.js). */
+  anuntEmail?: false;
   /** Days every device of the firm keeps papers, once a device brought its own or a person chose in Settings. */
   pastrare?: number;
   certificat?: string | null;
