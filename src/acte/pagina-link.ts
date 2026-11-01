@@ -11,7 +11,7 @@ import { faraMiscare } from "./material.ts";
 import { scenaLacat } from "./seif-lacat.ts";
 import { piciorHtml } from "./legal.ts";
 import { punLimba, limbaPaginii, t, type Cheie } from "./limba.ts";
-import { invitatie } from "./lansare.ts";
+import { cuPlay, invitatie, peAndroid, PLAY } from "./lansare.ts";
 import { imagineSigura } from "./marime-imagine.ts";
 import { desenezPaginile, type PdfJs } from "./pdf-pagini.ts";
 
@@ -31,8 +31,23 @@ function cuNume(k: Cheie, v: Record<string, string>, camp: string): string {
 const invit = () => `${invitatie("p.invit")}${piciorHtml(true)}`;
 
 const adresa = citesteAdresa(location.href);
-// The key leaves the address bar (and the history) as soon as it is read.
+/**
+ * On an Android phone, "Open in Colshare" hands the link to the app before it is opened here (decisions.md 2026-11-01,
+ * "Open in Colshare on a received link"): Messenger, Instagram and the like show this page in their own browser even
+ * where the app is installed, and the papers then belong in the app's vault. The key stays in the intent's data
+ * (Android reads the spec after the last #); a phone without the app goes to Google Play once the app is there, else
+ * back to this page with its key, to open it here.
+ */
+const inAplicatie = adresa && peAndroid() && !matchMedia("(pointer: fine)").matches ? (() => {
+  const u = new URL(location.href);
+  const inapoi = cuPlay() ? PLAY : u.href;
+  return `intent://${u.host}${u.pathname}${u.hash}#Intent;scheme=https;package=${aplicatie.id};S.browser_fallback_url=${encodeURIComponent(inapoi)};end`;
+})() : "";
+// The key leaves the address bar (and the history) as soon as it is read, and again if it comes back: a phone without
+// the app returns from "Open in Colshare" to this same page with its key, and that load does not run this file again
+// (attack test 2026-11-01, round 9, 1).
 if (location.hash) history.replaceState(null, "", location.pathname);
+addEventListener("hashchange", () => { if (location.hash) history.replaceState(null, "", location.pathname); });
 document.title = `${t("p.titlu")} · ${aplicatie.nume}`;
 
 function arata(html: string) {
@@ -305,7 +320,8 @@ if (!adresa || adresa.fel !== "link") {
     cine = firma ? `<p class="spus verificat">${cuNume("p.firma", { firma: firma.firma.firma, cui: firma.firma.cui }, "firma")}</p>` : de ? `<p class="spus">${cuNume("p.de", { nume: de }, "nume")}</p>` : "";
     // The lock in the middle of the night scene, its tape running, until the tap that opens it.
     inScena(`<div class="loc-lacat"></div>${cine}<h1>${tt("p.titlu")}</h1>${n ? `<p class="nota">${tt("p.de-la", { titlu: n })}</p>` : ""}
-      <p class="scena-text">${tt("p.text")}</p><button class="buton-sigiliu" id="deschid">${ico("lacat")}${tt("p.deschid")}${ico("sageata")}</button>`);
+      <p class="scena-text">${tt("p.text")}</p><button class="buton-sigiliu" id="deschid">${ico("lacat")}${tt("p.deschid")}${ico("sageata")}</button>
+      ${inAplicatie ? `<a class="buton-contur in-aplicatie" href="${esc(inAplicatie)}">${tt("o.deschid")}</a>` : ""}`);
     // Only a tap opens it: a link preview that runs the page must not use up the one opening.
     document.getElementById("deschid")!.addEventListener("click", deschid);
   };
