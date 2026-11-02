@@ -94,7 +94,8 @@ export function adresaCerere(domeniu: string, id: string, publica: Uint8Array, t
 
 export type Adresa =
   | { fel: "link"; id: string; cheie: Uint8Array; fata: FataLink }
-  | { fel: "cerere"; id: string; publica: Uint8Array; text: TextCerere; certificat?: string }
+  // `carte`: a firm's ask carries the asking person's People card (decisions.md 2026-11-02, "People with a firm, phase 3").
+  | { fel: "cerere"; id: string; publica: Uint8Array; text: TextCerere; certificat?: string; carte?: string }
   /** A firm's ask by its short link (./firma.ts): what it asks waits on the relay, encrypted under `cheie`. */
   | { fel: "cerere-firma"; id: string; cheie: Uint8Array };
 
@@ -201,13 +202,16 @@ export async function urca(r: Relay, op: string, baza: object, sigilat: Uint8Arr
 }
 
 /** Fetches `n` chunks through `op` and puts them together. */
-export async function coboara(r: Relay, op: string, baza: object, n: number, progres?: (f: number) => void): Promise<Uint8Array> {
+export async function coboara(r: Relay, op: string, baza: object, n: number, progres?: (f: number) => void, ultima?: (x: Record<string, unknown>) => void): Promise<Uint8Array> {
   const parti: Uint8Array[] = [];
   for (let i = 0; i < n; i++) {
     let incercari = 0;
     for (;;) {
       try {
-        parti.push(dinBase64((await r<{ d: string }>(op, { ...baza, i })).d));
+        const x = await r<{ d: string } & Record<string, unknown>>(op, { ...baza, i });
+        parti.push(dinBase64(x.d));
+        // What else came with the last chunk (a send link's one-time code, for the app's confirmation).
+        if (i === n - 1) ultima?.(x);
         break;
       } catch (e) {
         if (!(e instanceof EroareRelay) || (e.status !== 0 && e.status < 500) || ++incercari >= 3) throw e;
@@ -228,6 +232,18 @@ export interface LinkFacut {
   /** The deletion secret. */
   s: string;
   adresa: string;
+  /** The package's digest (rezumatPachet), which colshare.app signs when the link is opened. */
+  d: string;
+}
+
+/**
+ * A sealed package's digest as the relay computes it from the chunks it took (colshare-web/api/_acte/core.js): SHA-256
+ * over each chunk's SHA-256, in order, hex. The sender's phone and the receiving app compute it from the same bytes.
+ */
+export async function rezumatPachet(sigilat: Uint8Array): Promise<string> {
+  const n = bucati(sigilat.length), h = new Uint8Array(32 * n);
+  for (let i = 0; i < n; i++) h.set(new Uint8Array(await crypto.subtle.digest("SHA-256", sigilat.subarray(i * BUCATA, (i + 1) * BUCATA) as BufferSource)), 32 * i);
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", h as BufferSource))].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
 /**
@@ -240,19 +256,29 @@ export async function tokenLink(cheie: Uint8Array): Promise<string> {
 }
 
 /** Encrypts the package, sends it up and gives the link. */
-export async function facLink(r: Relay, domeniu: string, pachet: Uint8Array, progres?: (f: number, cifru?: string) => void, f?: FataLink): Promise<LinkFacut> {
+export async function facLink(r: Relay, domeniu: string, pachet: Uint8Array, progres?: (f: number, cifru?: string) => void, f?: FataLink, rezumatActe?: string): Promise<LinkFacut> {
   const id = b64url(aleator(16)), s = b64url(aleator(32)), cheie = aleator(32);
   const sigilat = await cripteazaLink(cheie, pachet);
-  await urca(r, "link-bucata", { id, s, t: await tokenLink(cheie) }, sigilat, progres);
-  return { id, s, adresa: adresaLink(domeniu, id, cheie, f) };
+  // `rezumatActe`: the digest of the receipt's papers (./deschidere.ts rezumatActe), which colshare.app signs with the
+  // opening, so the opening holds only on the receipt for these papers (attack round 14, M6).
+  await urca(r, "link-bucata", { id, s, t: await tokenLink(cheie), ...(rezumatActe ? { r: rezumatActe } : {}) }, sigilat, progres);
+  return { id, s, adresa: adresaLink(domeniu, id, cheie, f), d: await rezumatPachet(sigilat) };
 }
 
 /** Opens a send link: fetches it, decrypts it, tells the relay to delete it. Throws EroareRelay (410 opened, 404 gone). */
 export async function deschidLink(r: Relay, id: string, cheie: Uint8Array, progres?: (f: number) => void): Promise<Uint8Array> {
+  return (await deschidLinkCuRezumat(r, id, cheie, progres)).pachet;
+}
+
+/**
+ * As deschidLink, with the package's digest (rezumatPachet) and the one-time code its last chunk came with (`u`), which
+ * the receiving app's confirmation needs (./deschidere.ts).
+ */
+export async function deschidLinkCuRezumat(r: Relay, id: string, cheie: Uint8Array, progres?: (f: number) => void): Promise<{ pachet: Uint8Array; d: string; u?: string }> {
   const { n } = await r<{ n: number }>("link-info", { id });
-  let sigilat: Uint8Array;
+  let sigilat: Uint8Array, u: string | undefined;
   try {
-    sigilat = await coboara(r, "link-ia", { id, t: await tokenLink(cheie) }, n, progres);
+    sigilat = await coboara(r, "link-ia", { id, t: await tokenLink(cheie) }, n, progres, (x) => { if (typeof x.u === "string") u = x.u; });
   } catch (e) {
     // The relay refuses a key that isn't the link's, as the decryption would: the link stays for the right one.
     if (e instanceof EroareRelay && e.status === 403) throw new EroareRelay(422, "cheie");
@@ -262,7 +288,7 @@ export async function deschidLink(r: Relay, id: string, cheie: Uint8Array, progr
   if (!pachet) throw new EroareRelay(422, "cheie");
   // Deleted now; if this call fails, the relay deletes it fifteen minutes after the last chunk anyway.
   await r("link-deschis", { id }).catch(() => undefined);
-  return pachet;
+  return { pachet, d: await rezumatPachet(sigilat), ...(u ? { u } : {}) };
 }
 
 /** An ask opened: what the asker keeps (its private key stays in the phone's encrypted store). */

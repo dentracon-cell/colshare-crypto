@@ -17,8 +17,10 @@ export function campuriDeclaratie(d: Declaratie): [string, string][] {
       ? [[t("chitanta.camp.cand"), dataOra(d.data)], [t("dovada.camp.de"), d.de], [t("dovada.camp.primit"), d.catre], [t("chitanta.camp.pentru"), d.pentru], [t("chitanta.camp.acte"), String(d.acte)]]
       : d.fel === "trimitere"
         ? [[t("chitanta.camp.cand"), dataOra(d.data)], [t("dovada.camp.de"), d.de], [t("chitanta.camp.catre"), d.catre], [t("chitanta.camp.pentru"), d.pentru],
-          [t("chitanta.camp.cum"), t(d.cum === "firma" ? "chitanta.cum.firma" : "chitanta.cum.link")], [t("chitanta.camp.acte"), String(d.acte)]]
+          [t("chitanta.camp.cum"), t(`chitanta.cum.${d.cum}`)], [t("chitanta.camp.acte"), String(d.acte)]]
         : [[t("chitanta.camp.cand"), dataOra(d.data)], [t("chitanta.camp.catre"), catreText(d)], [t("chitanta.camp.pentru"), d.pentru],
-      [t("chitanta.camp.cum"), t(`chitanta.cum.${d.cum}`)], [t("chitanta.camp.acte"), String(d.acte)]];
+      [t("chitanta.camp.cum"), t(`chitanta.cum.${d.cum}`)], [t("chitanta.camp.acte"), String(d.acte)],
+      // A send link's receipt (R2): when it was opened, and where.
+      ...(d.deschis ? [[t("chitanta.camp.deschis"), dataOra(d.deschis)], [t("chitanta.camp.unde"), t(d.app ? "chitanta.unde.app" : "chitanta.unde.browser")]] as [string, string][] : [])];
   return c.filter(([, v]) => v);
 }

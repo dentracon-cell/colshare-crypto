@@ -58,11 +58,17 @@ export type Cum = "link" | "om" | "cerere" | "copie";
 /** What a QR code says. */
 export type Declaratie =
   | { fel: "copie"; id: string; data: string; act: FelHartie; pentru: string; scop: string }
-  | { fel: "chitanta"; id: string; data: string; cum: Cum; catre: string; pentru: string; acte: number; h: string }
+  /**
+   * A sender's receipt. One for a send link opened (R2, decisions.md 2026-11-02 "A link's receipt is made once it is
+   * opened") adds when it was opened (`deschis`), whether a Colshare app confirmed it (`app`) and `o`: 128 bits of the
+   * SHA-256 of the receipt's annex (./deschidere.ts), colshare.app's signed opening, which only the PDF carries.
+   */
+  | { fel: "chitanta"; id: string; data: string; cum: Cum; catre: string; pentru: string; acte: number; h: string; deschis?: string; app?: boolean; o?: string }
   /** A firm's receipt for papers it received in one of its asks (Colshare Business), signed with the firm's key. */
   | { fel: "primire"; id: string; data: string; de: string; catre: string; pentru: string; acte: number; h: string }
   /** A firm's receipt for papers it sent, by link or straight to another firm (Colshare Business), with the firm's key. */
-  | { fel: "trimitere"; id: string; data: string; de: string; catre: string; pentru: string; cum: "link" | "firma"; acte: number; h: string };
+  // `cum` "om": straight to a client in People (decisions.md 2026-11-02, "People with a firm").
+  | { fel: "trimitere"; id: string; data: string; de: string; catre: string; pentru: string; cum: "link" | "firma" | "om"; acte: number; h: string };
 
 const FELURI: FelHartie[] = ["id", "pasaport", "act"];
 const CUM: Cum[] = ["link", "om", "cerere", "copie"];
@@ -76,7 +82,9 @@ export function textDeclaratie(d: Declaratie): string {
       ? ["P1", d.id, d.data, curat(d.de), curat(d.catre), curat(d.pentru), String(d.acte), d.h]
       : d.fel === "trimitere"
         ? ["T1", d.id, d.data, curat(d.de), curat(d.catre), curat(d.pentru), d.cum, String(d.acte), d.h]
-        : ["R1", d.id, d.data, d.cum, curat(d.catre), curat(d.pentru), String(d.acte), d.h]).join("\n");
+        : d.deschis && d.o
+          ? ["R2", d.id, d.data, curat(d.catre), curat(d.pentru), String(d.acte), d.h, d.deschis, d.app ? "a" : "b", d.o]
+          : ["R1", d.id, d.data, d.cum, curat(d.catre), curat(d.pentru), String(d.acte), d.h]).join("\n");
 }
 
 // Receipts bind their files with 128 bits of the digest; the 64 bits of the first receipts (before 2026-10-25) are no
@@ -92,7 +100,11 @@ export function citesteDeclaratia(s: string): Declaratie | undefined {
   if (p[0] === "R1" && p.length === 8 && data.test(p[2]) && CUM.includes(p[3] as Cum) && /^\d{1,3}$/.test(p[6]) && /^[0-9a-f]{32}$/.test(p[7])) {
     return { fel: "chitanta", id: p[1], data: p[2], cum: p[3] as Cum, catre: p[4], pentru: p[5], acte: Number(p[6]), h: p[7] };
   }
-  if (p[0] === "T1" && p.length === 9 && data.test(p[2]) && (p[6] === "link" || p[6] === "firma") && /^\d{1,3}$/.test(p[7]) && /^[0-9a-f]{32}$/.test(p[8])) {
+  if (p[0] === "R2" && p.length === 10 && data.test(p[2]) && /^\d{1,3}$/.test(p[5]) && /^[0-9a-f]{32}$/.test(p[6]) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/.test(p[7])
+    && (p[8] === "a" || p[8] === "b") && /^[0-9a-f]{32}$/.test(p[9])) {
+    return { fel: "chitanta", id: p[1], data: p[2], cum: "link", catre: p[3], pentru: p[4], acte: Number(p[5]), h: p[6], deschis: p[7], app: p[8] === "a", o: p[9] };
+  }
+  if (p[0] === "T1" && p.length === 9 && data.test(p[2]) && (p[6] === "link" || p[6] === "firma" || p[6] === "om") && /^\d{1,3}$/.test(p[7]) && /^[0-9a-f]{32}$/.test(p[8])) {
     return { fel: "trimitere", id: p[1], data: p[2], de: p[3], catre: p[4], pentru: p[5], cum: p[6], acte: Number(p[7]), h: p[8] };
   }
   if (p[0] === "P1" && p.length === 8 && data.test(p[2]) && /^\d{1,3}$/.test(p[6]) && /^[0-9a-f]{32}$/.test(p[7])) {
@@ -154,6 +166,10 @@ async function tine(publica: Uint8Array, sig: Uint8Array, date: Uint8Array): Pro
     return false;
   }
 }
+
+/** A labelled text signed with this phone's key (./deschidere.ts), and checked with a raw P-256 key. */
+export const semnezText = (k: CheieSemnare, text: string) => semnatura(k, enc(text));
+export const tineText = (publica: Uint8Array, sig: Uint8Array, text: string) => tine(publica, sig, enc(text));
 
 /**
  * A key as 24 digits, the same on every copy it signs: to see two copies come from the same phone. 80 bits: a key made
@@ -225,7 +241,8 @@ async function rezumatFisier(dovada: string, imagini: Uint8Array[]): Promise<Uin
 /**
  * The PDF's /ColshareProof value: the link's proof, "~", the signature over it and the pictures. A firm's receipt adds
  * "~" and the firm's certificate (./firma.ts), so /v/ can name the firm as Colshare checked it: the certificate is
- * signed by colshare.app and names the key the receipt is signed with (attack test 2026-10-29, K1).
+ * signed by colshare.app and names the key the receipt is signed with (attack test 2026-10-29, K1). A send link's
+ * receipt (R2) puts its annex there instead: colshare.app's signed opening (./deschidere.ts), which its statement binds.
  */
 export async function legFisier(k: CheieSemnare, dovada: string, imagini: Uint8Array[], certificat?: string): Promise<string> {
   return `${dovada}~${b64url(await semnatura(k, await rezumatFisier(dovada, imagini)))}${certificat ? `~${certificat}` : ""}`;
@@ -291,6 +308,7 @@ export async function verificFisier(pdf: Uint8Array): Promise<{ stare: "fara" } 
   if (!m || !dovada) return { stare: "fara" };
   const imagini = imaginiPdf(pdf, text);
   const bun = dovada.tine && imagini.length > 0 && caScris(pdf, text) && await tine(dovada.publica, dinB64url(m[2]), await rezumatFisier(m[1], imagini));
-  // The certificate is checked by the caller (./firma.ts verificCertificat, against the receipt's key and day).
+  // The certificate is checked by the caller (./firma.ts verificCertificat, against the receipt's key and day); a link
+  // receipt's annex too (./deschidere.ts verificAnexa, against its statement).
   return { stare: bun ? "bun" : "schimbat", dovada, ...(m[3] ? { certificat: m[3] } : {}) };
 }

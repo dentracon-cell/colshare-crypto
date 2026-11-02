@@ -110,7 +110,8 @@ const sha256 = async (b: Uint8Array) => new Uint8Array(await crypto.subtle.diges
 /** A seat's id: the first 16 bytes of its public key's SHA-256 (colshare-web/api/_firme/core.js idLoc). */
 export const idLoc = async (publica: Uint8Array) => b64url(await sha256(publica)).slice(0, 22);
 
-async function semnez(privata: string, text: string): Promise<string> {
+/** An ECDSA P-256 signature (r ‖ s, b64url) over `text` with a PKCS#8 private key. */
+export async function semnez(privata: string, text: string): Promise<string> {
   const k = await crypto.subtle.importKey("pkcs8", dinB64url(privata) as BufferSource, EC, false, ["sign"]);
   return b64url(new Uint8Array(await crypto.subtle.sign(SHA, k, enc(text) as BufferSource)));
 }
@@ -159,7 +160,7 @@ export function apelFirma(server: string, trimite: typeof fetch = (...a) => fetc
 export type ApelFirma = ReturnType<typeof apelFirma>;
 
 /** A seat's calls as a Relay (./link.ts), for coboara. */
-const caRelay = (apel: ApelFirma, loc: Loc): Relay => (op, corp) => apel(op, corp, loc);
+export const caRelay = (apel: ApelFirma, loc: Loc): Relay => (op, corp) => apel(op, corp, loc);
 
 /** What the server says of the firm to a seat (core.js despre). */
 export interface StareFirma {
@@ -184,7 +185,7 @@ export interface StareFirma {
   /** `ultim`: the seat's last call, to the hour; `p`: the person it belongs to (none on a seat made before people). */
   scaune: { id: string; cheie: string; nume: string; creat: string; p?: string; ultim?: string; eu?: true; semn?: Semn }[];
   /** The firm's people (decisions.md 2026-10-24, "A Business seat is a person"). */
-  persoane?: { id: string; cheie: string; nume: string; creat: string; predare?: { catre: string; la: string; de?: string | null; acceptat?: string }; vechi?: string[]; rotire?: true; semn?: Semn }[];
+  persoane?: { id: string; cheie: string; nume: string; creat: string; predare?: { catre: string; la: string; de?: string | null; acceptat?: string }; predatLui?: string; vechi?: string[]; rotire?: true; semn?: Semn }[];
   /** The firm's recovery public key, once one was set. */
   recuperare?: string;
   /** The recovery key vouched for by a device of the firm (verificDirector). */
@@ -735,19 +736,30 @@ export interface CerereFirma extends MetaCerere {
   creat: string;
   adresa: string;
   /**
-   * A desk row that is not an ask: another firm (what it sent here, what was sent to it; `firma` names it), or papers
-   * sent by link to someone with no ask of their own.
+   * A desk row that is not an ask: another firm (what it sent here, what was sent to it; `firma` names it), papers
+   * sent by link to someone with no ask of their own, or a client in People ("om": the row's id is the person's,
+   * ./birou/oameni.ts).
    */
-  fel?: "firma" | "trimis";
+  fel?: "firma" | "trimis" | "om";
   firma?: { firma: string; cui: string; tara: string };
   /** An ask closed here or no longer on the relay (closed by another seat, or past its days): its link is gone. */
   inchisa?: true;
+  /**
+   * The People card the client sent with an answer (decisions.md 2026-11-02, "People with a firm, phase 3"): the desk
+   * offers to add them, so the next send and ask go straight to their app.
+   */
+  carte?: string;
   /** A client a colleague sent over: their name (the row has no link of its own here). */
   dela?: string;
   /** That colleague's person id: only their later packages, or this person's own devices, file into the row. */
   delaP?: string;
   /** Sent from a departed colleague's returned device with the firm's recovery file (`dela` names whose it was). */
   recuperat?: true;
+  /**
+   * An ask sent straight to a client in People (./birou/oameni.ts cerClientului): that client's desk id. It has no link;
+   * the client answers from the app, and it is a folder of their file.
+   */
+  om?: string;
 }
 
 /**
@@ -774,14 +786,17 @@ async function aesScurt(cheie: Uint8Array, uz: KeyUsage) {
  * page and app check it as any firm's ask, and it lists the ask only to that person's devices.
  */
 export async function facCerereFirma(apel: ApelFirma, loc: Loc, inel: Inel, certificat: string | undefined, domeniu: string, meta: MetaCerere, firma: string,
-  persoana?: { cheie: Persoana; recuperare: string }): Promise<CerereFirma> {
+  persoana?: { cheie: Persoana; recuperare: string }, carte?: string): Promise<CerereFirma> {
   const k = cheiaCurenta(inel);
   const a = persoana ? await perecheLacat() : undefined;
   const publicaCererii = a ? b64url(a.publica) : k.publica;
   const id = b64url(aleator(16));
   const kl = aleator(16);
   const text = { t: meta.titlu.slice(0, 200), c: meta.ce.map((x) => x.slice(0, 200)).filter(Boolean).slice(0, 12), n: firma.slice(0, 80), ...(meta.k ? { k: meta.k } : {}),
-    ...(meta.nota && curatNota(meta.nota) ? { o: curatNota(meta.nota) } : {}) };
+    ...(meta.nota && curatNota(meta.nota) ? { o: curatNota(meta.nota) } : {}),
+    // The asking person's People card (./birou/oameni.ts carteaMea), inside what only the link opens: the client's app
+    // offers to add them once it answered (decisions.md 2026-11-02, "People with a firm, phase 3").
+    ...(carte && carte.length <= MAX_CARTE_CERERE ? { pc: carte } : {}) };
   const iv = aleator(12);
   // A person's ask carries no certificate of its own: the one in hand names the firm's key, the relay signs one for the ask's.
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv as BufferSource, additionalData: AAD_SCURT(id) as BufferSource }, await aesScurt(kl, "encrypt"),
@@ -801,6 +816,9 @@ export async function facCerereFirma(apel: ApelFirma, loc: Loc, inel: Inel, cert
   await apel("cerere-pune", { id, m, p: b64url(p), g: k.g, ...aPersoanei }, loc);
   return { ...cu, id, g: k.g, creat: new Date().toISOString(), adresa: adresaCerereFirmaDin(domeniu, { id, ...cu })! };
 }
+
+/** The longest People card an ask carries. */
+const MAX_CARTE_CERERE = 600;
 
 /** The short link of a firm's ask (any seat: the key is in its sealed details). */
 export function adresaCerereFirmaDin(domeniu: string, c: { id: string; kl?: string; l?: string }): string | undefined {
@@ -828,6 +846,7 @@ export async function deschidCerereFirma(r: Relay, id: string, cheie: Uint8Array
       fel: "cerere", id, publica, ...(cert ? { certificat: cert } : {}),
       text: { titlu: curat(x.t).slice(0, 200), ce, ...(typeof x.n === "string" && curat(x.n).trim() ? { de: curat(x.n).slice(0, 80) } : {}), ...(typeof x.k === "string" && ID_TRUSA.test(x.k) ? { k: x.k } : {}),
         ...(typeof x.o === "string" && curatNota(x.o) ? { nota: curatNota(x.o) } : {}) },
+      ...(typeof x.pc === "string" && x.pc.length <= MAX_CARTE_CERERE ? { carte: x.pc } : {}),
     };
   } catch {
     return undefined;
@@ -864,9 +883,14 @@ export interface CerereListata {
   g: number;
   creat: string;
   casuta?: true;
+  /** This person's People mailbox: what clients' apps dropped (./birou/oameni.ts takes it, not iauDinFirma). */
+  oameni?: true;
   meta?: MetaCerere;
-  /** `de`: on the firm's inbox, the firm that announced the item, as its certificate names it (second round, S2). */
-  acte: { item: string; n: number; octeti: number; la: string; de?: Anuntator }[];
+  /**
+   * `de`: on the firm's inbox, the firm that announced the item, as its certificate names it (second round, S2). `j`: in
+   * a People mailbox, the hash of the client's token it came through.
+   */
+  acte: { item: string; n: number; octeti: number; la: string; de?: Anuntator; j?: string }[];
   /** A person's ask: whose, its own key opened, and that key sealed to the firm's recovery key (the recovery copy). */
   persoana?: string;
   cheie?: CheieFirma;
@@ -883,9 +907,10 @@ export interface CerereListata {
  * device's person key, which opens that person's asks (the relay lists no one else's).
  */
 export async function cereriFirma(apel: ApelFirma, loc: Loc, inel: Inel, persoana?: Persoana): Promise<CerereListata[]> {
-  const { cereri } = await apel<{ cereri: { id: string; m: string; g: number; creat: string; casuta?: true; persoana?: string; k?: string; kp?: string; kr?: string; mr?: string; inchisa?: string; acte: CerereListata["acte"] }[] }>("cereri", {}, loc);
+  const { cereri } = await apel<{ cereri: { id: string; m: string; g: number; creat: string; casuta?: true; oameni?: true; persoana?: string; k?: string; kp?: string; kr?: string; mr?: string; inchisa?: string; acte: CerereListata["acte"] }[] }>("cereri", {}, loc);
   const out: CerereListata[] = [];
   for (const c of cereri) {
+    if (c.casuta && c.oameni) { out.push({ id: c.id, g: c.g, creat: c.creat, casuta: true as const, oameni: true as const, acte: c.acte, ...(c.persoana ? { persoana: c.persoana } : {}) }); continue; }
     // A person's own inbox: what colleagues and their other device sent, sealed to the person's key itself.
     if (c.casuta && c.persoana) {
       out.push({ id: c.id, g: c.g, creat: c.creat, casuta: true as const, acte: c.acte, persoana: c.persoana,
@@ -992,7 +1017,8 @@ export async function iauDinFirma(apel: ApelFirma, loc: Loc, inel: Inel, pastrea
   for (const c of await cereriFirma(apel, loc, inel, cum.persoana)) {
     // An ask's answers are sealed to the generation it was opened under; another firm seals to the key it was shown; a
     // person's ask, to its own key (none here when this device cannot open it: left for another sync).
-    if (c.persoana && !c.cheie) continue;
+    // The People mailbox is taken by ./birou/oameni.ts, envelope by envelope.
+    if (c.oameni || (c.persoana && !c.cheie)) continue;
     const candidate = c.casuta && c.persoana && cum.persoana?.id === c.persoana ? cheiPersoana(cum.persoana).map((k) => ({ g: 0, ...k }))
       : c.cheie ? [c.cheie] : c.casuta ? [...inel.chei].reverse() : [...inel.chei.filter((x) => x.g === c.g), ...[...inel.chei].reverse().filter((x) => x.g !== c.g)];
     for (const a of c.acte) {
@@ -1034,7 +1060,8 @@ export const inchidCererea = (apel: ApelFirma, loc: Loc, id: string, uita = fals
 
 export const INFO_TRIMIS = enc("colshare-trimis-v1");
 
-async function verificSemnatura(publica: Uint8Array, text: string, sig: string): Promise<boolean> {
+/** A signature made by semnez, checked against a raw public key. */
+export async function verificSemnatura(publica: Uint8Array, text: string, sig: string): Promise<boolean> {
   try {
     const k = await crypto.subtle.importKey("raw", publica as BufferSource, EC, false, ["verify"]);
     return await crypto.subtle.verify(SHA, k, dinB64url(sig) as BufferSource, enc(text) as BufferSource);
@@ -1180,7 +1207,8 @@ async function rezumatPachet(p: Pachet): Promise<string> {
   const fisiere = await Promise.all(p.fisiere.map(async (f) => [f.nume, f.tip, b64url(await sha256(f.date))]));
   // The copies a package names are signed with its files (decisions.md 2026-11-01, "A copy stays with its original"),
   // so no one who can seal to an inbox can mark a paper as a copy; a package without them signs as before.
-  return b64url(await sha256(enc(JSON.stringify({ t: p.titlu ?? "", d: p.de ?? "", f: fisiere, ...(p.copii?.length ? { y: p.copii } : {}) }))));
+  // A handover of clients is signed too (phase 4), so nobody who can seal to an inbox can hand someone clients.
+  return b64url(await sha256(enc(JSON.stringify({ t: p.titlu ?? "", d: p.de ?? "", f: fisiere, ...(p.copii?.length ? { y: p.copii } : {}), ...(p.oameni ? { o: p.oameni } : {}) }))));
 }
 const textPachet = (casuta: string, item: string, h: string) => `colshare-pachet-firma-v1\n${casuta}\n${item}\n${h}`;
 
@@ -1333,3 +1361,67 @@ export const stergTrimis = (apel: ApelFirma, loc: Loc, id: string) => apel("trim
 
 /** The desk's row for another firm: the same id on every seat of this firm, from that firm's country and tax ID. */
 export const idRandFirma = async (tara: string, cui: string) => b64url(await sha256(enc(`colshare-rand-firma-v1\n${tara}\n${cui}`))).slice(0, 22);
+
+// ------------------------------------------------------------------ People with a firm (decisions.md 2026-11-02, "An app user and a Business firm add each other in People")
+
+/**
+ * What the firm's key signs to say a People mailbox is a person of the firm: their key, the mailbox, the name the firm
+ * gives them (colshare-web/api/_firme/core.js textOmFirma, kept equal).
+ */
+export const textOmFirma = (publica: string, casuta: string, nume: string) => `colshare-om-firma-v1\n${publica}\n${casuta}\n${nume}`;
+
+/** The firm's proof for a person's People mailbox, as the relay gives it to a client's app (casuta-info). */
+export interface DovadaFirma {
+  /** The certificate for the firm's key as the licence stands now. */
+  c: string;
+  /** That key's signature over textOmFirma. */
+  s: string;
+  publica: string;
+  nume: string;
+}
+
+/** A person of a checked firm: the firm as colshare.app signed it, their key and the name the firm signed. */
+export interface OmAlFirmei {
+  firma: Certificat;
+  publica: string;
+  nume: string;
+}
+
+/**
+ * The firm's proof checked for mailbox `casuta`: the certificate signed by colshare.app and valid today, and the firm's
+ * key in it signing the person's key, this mailbox and their name. Undefined for anything else, so the app refuses a
+ * card marked as a firm's rather than add it as a person.
+ */
+export async function verificOmFirma(d: unknown, casuta: string, chei: string[] = CHEI_CERTIFICAT, azi = new Date()): Promise<OmAlFirmei | undefined> {
+  const x = d as Partial<DovadaFirma> | null | undefined;
+  if (!x || typeof x.c !== "string" || typeof x.s !== "string" || typeof x.publica !== "string" || typeof x.nume !== "string" || x.nume.length > 80) return undefined;
+  const firma = await verificCertificat(x.c, undefined, chei, azi);
+  if (!firma) return undefined;
+  try {
+    if (!estePublica(dinB64url(x.publica))) return undefined;
+  } catch {
+    return undefined;
+  }
+  if (!(await verificSemnatura(firma.cheie, textOmFirma(x.publica, casuta, x.nume), x.s))) return undefined;
+  const nume = curat(x.nume).trim();
+  return nume ? { firma, publica: x.publica, nume } : undefined;
+}
+
+/** What the server keeps of this person's People mailbox and its proof. */
+export interface CasutaOameni {
+  casuta: string;
+  jetoane: string[];
+  dovada?: { publica: string; k: string; g: number; nume: string };
+}
+
+/**
+ * This person's People mailbox, made the first time, with the firm's proof signed again when it is missing or stale (a
+ * new generation of the firm's key, a new person key, another name). Only a paid firm we have checked has one.
+ */
+export async function casutaOameniFirma(apel: ApelFirma, loc: Loc, inel: Inel, eu: Persoana, nume: string): Promise<CasutaOameni> {
+  const x = await apel<CasutaOameni>("oameni-casuta", {}, loc);
+  const k = cheiaCurenta(inel);
+  const n = nume.trim().slice(0, 80);
+  if (x.dovada && x.dovada.publica === eu.publica && x.dovada.k === k.publica && x.dovada.g === k.g && x.dovada.nume === n) return x;
+  return apel<CasutaOameni>("oameni-casuta", { s: await semnez(k.privata, textOmFirma(eu.publica, x.casuta, n)), nume: n }, loc);
+}

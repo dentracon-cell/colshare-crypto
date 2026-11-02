@@ -45,6 +45,11 @@ export interface Pachet {
    * both devices give it (its `ref`), and for a marked copy what its marking says. Signed with the files when present.
    */
   copii?: CopieInPachet[];
+  /**
+   * A person's clients in People handed to the colleague who takes over, or to them from a returned device (JSON,
+   * ./birou/oameni.ts clientiDePredat; decisions.md 2026-11-02, "People with a firm, phase 4"). Signed with the files.
+   */
+  oameni?: string;
   fisiere: FisierPachet[];
 }
 
@@ -60,6 +65,7 @@ interface Antet {
   c?: { p: string; client: string; titlu: string; rand: string; s: string };
   k?: string;
   y?: CopieInPachet[];
+  p?: string;
   fisiere: { nume: string; tip: string; octeti: number }[];
 }
 
@@ -93,14 +99,18 @@ export function numeSigur(nume: string, tip: string): string {
 
 /** The longest card a package carries (a card link is about 230 characters). */
 const MAX_CARTE = 700;
+/** The longest list of clients a package hands over. */
+const MAX_OAMENI = 400_000;
 
 export function impacheteaza(p: Pachet): Uint8Array {
-  if (!p.fisiere.length || p.fisiere.length > MAX_FISIERE) throw new Error("pachet: număr de fișiere greșit");
+  // A handover of clients may come with no files; anything else has at least one.
+  if ((!p.fisiere.length && !p.oameni) || p.fisiere.length > MAX_FISIERE) throw new Error("pachet: număr de fișiere greșit");
   const antet: Antet = {
     v: 1, ...(p.titlu ? { titlu: p.titlu.slice(0, 300) } : {}), ...(p.de ? { de: p.de.slice(0, 120) } : {}), ...(p.nota && curatNota(p.nota) ? { o: curatNota(p.nota) } : {}), ...(p.firma ? { f: { c: p.firma.c, s: p.firma.s } } : {}),
     ...(p.coleg ? { c: { p: p.coleg.p, client: p.coleg.client.slice(0, 120), titlu: p.coleg.titlu.slice(0, 200), rand: p.coleg.rand, s: p.coleg.s } } : {}),
     ...(p.carte && p.carte.length <= MAX_CARTE ? { k: p.carte } : {}),
     ...(copiiCurate(p.copii, p.fisiere.length).length ? { y: copiiCurate(p.copii, p.fisiere.length) } : {}),
+    ...(p.oameni && p.oameni.length <= MAX_OAMENI ? { p: p.oameni } : {}),
     fisiere: p.fisiere.map((f) => {
       if (!TIPURI.test(f.tip)) throw new Error("pachet: tip de fișier greșit");
       return { nume: numeSigur(f.nume, f.tip), tip: f.tip, octeti: f.date.length };
@@ -139,6 +149,7 @@ export function despacheteaza(b: Uint8Array): Pachet {
   // The card is read as a card by whoever offers it (./oameni.ts citesteCarte); here only its size is bounded.
   const km = typeof antet.k === "string" && antet.k.length <= MAX_CARTE ? { carte: antet.k } : {};
   const copii = copiiCurate(antet.y, fisiere.length);
+  const om = typeof antet.p === "string" && antet.p.length <= MAX_OAMENI ? { oameni: antet.p } : {};
   // The title and the sender's name without control or direction characters, as the link's front (./link.ts curat).
-  return { ...(typeof antet.titlu === "string" ? { titlu: curat(antet.titlu) } : {}), ...(typeof antet.de === "string" ? { de: curat(antet.de) } : {}), ...(nota ? { nota } : {}), ...fm, ...cm, ...km, ...(copii.length ? { copii } : {}), fisiere };
+  return { ...(typeof antet.titlu === "string" ? { titlu: curat(antet.titlu) } : {}), ...(typeof antet.de === "string" ? { de: curat(antet.de) } : {}), ...(nota ? { nota } : {}), ...fm, ...cm, ...km, ...(copii.length ? { copii } : {}), ...om, fisiere };
 }

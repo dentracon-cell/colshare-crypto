@@ -17,6 +17,7 @@
 // copies and receipts, ./dovada.ts): which relay item, when it was opened, the package's SHA-256, from whom, to whom.
 // The relay learns nothing new; the sender's receipt gains who opened it and when, provably.
 import { deschideCuLacat, estePublica, importaPrivata, LUNGIME_PUBLICA, perecheLacat, sigileazaPentruLacat } from "../core/teren/lacat.ts";
+import { CHEI_CERTIFICAT, verificOmFirma, type OmAlFirmei } from "./firma.ts";
 import { aleator, b64url, bucati, coboara, curat, dinB64url, EroareRelay, ID_TRUSA, MAX_BUCATI, urca, type Relay } from "./link.ts";
 
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -77,6 +78,11 @@ export interface Om {
   salutLa?: string;
   /** How this phone knows the key is theirs, and since when (Verificare). None: it came through the relay, unchecked. */
   verificat?: Verificare;
+  /**
+   * A person at a firm (decisions.md 2026-11-02, "An app user and a Business firm add each other in People"): the firm
+   * as colshare.app checked it when they were added. Every send checks the firm's proof again (trimitLui).
+   */
+  firma?: { firma: string; cui: string; tara: string };
 }
 
 /**
@@ -190,26 +196,31 @@ export function liste(s: StareOameni): Required<Omit<StareOameni, "eu">> & { eu?
 
 // ------------------------------------------------------------------ the card
 
-/** What a card says: who, their key, their mailbox and the token made for this card. */
+/**
+ * What a card says: who, their key, their mailbox and the token made for this card. `firma`: a person at a firm's card
+ * (a fifth part, "f"): the app adds it only with the firm's proof (dovadaCartii), and an app from before, which reads
+ * four parts, refuses it rather than add a firm as a plain person.
+ */
 export interface Carte {
   publica: Uint8Array;
   casuta: string;
   jeton: string;
   nume: string;
+  firma?: true;
 }
 
 export const adresaCarte = (domeniu: string, c: Carte) =>
-  `${domeniu}/o/#${b64url(c.publica)}.${c.casuta}.${c.jeton}.${b64url(enc(c.nume.slice(0, MAX_NUME)))}`;
+  `${domeniu}/o/#${b64url(c.publica)}.${c.casuta}.${c.jeton}.${b64url(enc(c.nume.slice(0, MAX_NUME)))}${c.firma ? ".f" : ""}`;
 
 /** A card link (or its fragment) read back; undefined for anything else. */
 export function citesteCarte(adresa: string): Carte | undefined {
   const m = /(?:\/o\/?)?#([A-Za-z0-9_.-]+)\s*$/.exec(adresa.trim());
   const p = m?.[1].split(".");
-  if (!p || p.length !== 4 || !ID.test(p[1]) || !JETON.test(p[2])) return undefined;
+  if (!p || (p.length !== 4 && !(p.length === 5 && p[4] === "f")) || !ID.test(p[1]) || !JETON.test(p[2])) return undefined;
   try {
     const publica = dinB64url(p[0]);
     const nume = curat(new TextDecoder("utf-8", { fatal: true }).decode(dinB64url(p[3]))).trim().slice(0, MAX_NUME);
-    return estePublica(publica) ? { publica, casuta: p[1], jeton: p[2], nume } : undefined;
+    return estePublica(publica) ? { publica, casuta: p[1], jeton: p[2], nume, ...(p.length === 5 ? { firma: true as const } : {}) } : undefined;
   } catch {
     return undefined;
   }
@@ -247,7 +258,8 @@ export async function codSiguranta(a: Uint8Array, b: Uint8Array): Promise<string
 
 /** What an envelope says before its package. */
 export type Antet =
-  | { fel: "salut"; nume: string; casuta: string; jeton: string }
+  // `f`: a person at a firm greets (./birou/oameni.ts adaugDinCarte); the app checks the firm's proof before showing them.
+  | { fel: "salut"; nume: string; casuta: string; jeton: string; f?: true }
   | { fel: "acte"; raspunsLa?: string }
   | { fel: "cerere"; id: string; titlu: string; ce: string[]; k?: string }
   | ({ fel: "confirmare"; s: string } & Deschidere);
@@ -322,7 +334,7 @@ function antetBun(x: unknown): Antet | undefined {
   const a = x as Record<string, unknown> | null;
   const text = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : undefined);
   if (a?.fel === "salut" && typeof a.casuta === "string" && ID.test(a.casuta) && typeof a.jeton === "string" && JETON.test(a.jeton)) {
-    return { fel: "salut", nume: text(a.nume, MAX_NUME) ?? "", casuta: a.casuta, jeton: a.jeton };
+    return { fel: "salut", nume: text(a.nume, MAX_NUME) ?? "", casuta: a.casuta, jeton: a.jeton, ...(a.f === true ? { f: true as const } : {}) };
   }
   if (a?.fel === "confirmare" && typeof a.item === "string" && ID.test(a.item) && typeof a.cand === "string" && !Number.isNaN(Date.parse(a.cand))
     && typeof a.h === "string" && HEX64.test(a.h) && typeof a.s === "string" && /^[A-Za-z0-9_-]{40,200}$/.test(a.s)) {
@@ -394,9 +406,74 @@ export async function carteNoua(r: Relay, stare: StareOameni, domeniu: string, n
   return adresaCarte(domeniu, { publica: dinB64url(eu.publica), casuta: eu.casuta, jeton: t, nume });
 }
 
-/** An envelope to a person's mailbox, through the token they gave: checked, sealed, sent up in chunks. Gives the relay item. */
-export async function trimitLui(r: Relay, eu: Chei, om: Pick<Om, "casuta" | "jeton" | "publica">, antet: Antet, pachet?: Uint8Array, progres?: (f: number) => void): Promise<string> {
-  await r("casuta-info", { id: om.casuta, t: om.jeton });
+/**
+ * The firm's proof for a person at a firm's card, fetched with the card's token and checked (./firma.ts verificOmFirma):
+ * the key it names must be the card's. Undefined when the relay gives none or it does not hold.
+ */
+export async function dovadaCartii(r: Relay, carte: Pick<Carte, "casuta" | "jeton" | "publica">, chei: string[] = CHEI_CERTIFICAT, azi = new Date()): Promise<OmAlFirmei | undefined> {
+  const x = await r<{ firma?: unknown }>("casuta-info", { id: carte.casuta, t: carte.jeton });
+  const d = await verificOmFirma(x.firma, carte.casuta, chei, azi);
+  return d && d.publica === b64url(carte.publica) ? d : undefined;
+}
+
+/**
+ * Someone who greeted as a person at a firm (Primit "om-nou" with `firma`): kept only when the firm's proof holds for
+ * the key that greeted, and then named as the firm signed it, with the firm. Anything else is taken off at once, its
+ * token too, so a greeting that only claims a firm never shows. True when kept.
+ */
+export async function verificFirmaOmului(r: Relay, stare: StareOameni, om: Om, chei: string[] = CHEI_CERTIFICAT, azi = new Date()): Promise<boolean> {
+  const d = await dovadaCartii(r, { casuta: om.casuta, jeton: om.jeton, publica: dinB64url(om.publica) }, chei, azi).catch(() => undefined);
+  if (!d) {
+    await scot(r, stare, om.id, false).catch(() => undefined);
+    return false;
+  }
+  Object.assign(om, { nume: d.nume, firma: { firma: d.firma.firma, cui: d.firma.cui, tara: d.firma.tara } });
+  return true;
+}
+
+/**
+ * Whether a person at a firm, already added, still has the firm's proof for their key (asked before showing their
+ * papers or an ask): false when the relay says no (their mailbox closed, as when all their devices were removed, the
+ * firm lapsed, or the proof is not for this key), undefined when it could not be asked (attack round 14, M2).
+ */
+export async function firmaIlMaiTine(r: Relay, om: Om, chei: string[] = CHEI_CERTIFICAT, azi = new Date()): Promise<boolean | undefined> {
+  try {
+    return !!(await dovadaCartii(r, { casuta: om.casuta, jeton: om.jeton, publica: dinB64url(om.publica) }, chei, azi));
+  } catch (e) {
+    return e instanceof EroareRelay ? false : undefined;
+  }
+}
+
+/**
+ * A firm's person who greeted with a new key (Primit "cheie-noua"): taken when the firm's proof holds for that key and
+ * names the same firm. They stay the same person in People, now under the new key, mailbox and name; the key is no
+ * longer marked checked by this phone until the safety code is compared again. True when taken.
+ */
+export async function iauCheiaNoua(r: Relay, p: Extract<Primit, { fel: "cheie-noua" }>, chei: string[] = CHEI_CERTIFICAT, azi = new Date()): Promise<boolean> {
+  const om = p.om;
+  if (!om.firma) return false;
+  const d = await dovadaCartii(r, { casuta: p.casuta, jeton: p.jeton, publica: dinB64url(p.publica) }, chei, azi).catch(() => undefined);
+  if (!d || d.firma.cui !== om.firma.cui || d.firma.tara !== om.firma.tara) return false;
+  Object.assign(om, { publica: p.publica, casuta: p.casuta, jeton: p.jeton, salutLa: p.la, nume: d.nume, firma: { firma: d.firma.firma, cui: d.firma.cui, tara: d.firma.tara },
+    vazute: [...(om.vazute ?? []), p.item].slice(-MAX_VAZUTE), vazuteLa: [...(om.vazuteLa ?? (om.vazute ?? []).map(() => "")), p.la].slice(-MAX_VAZUTE) });
+  delete om.verificat;
+  return true;
+}
+
+/**
+ * An envelope to a person's mailbox, through the token they gave: checked, sealed, sent up in chunks. Gives the relay
+ * item. To a person at a firm, only while the firm's proof still holds for the same firm and the same key: a firm whose
+ * licence lapsed, or that we no longer check, refuses (EroareRelay 403 "firma"), and a new key waits for the firm to
+ * greet with it (409 "firma-cheie").
+ */
+export async function trimitLui(r: Relay, eu: Chei, om: Pick<Om, "casuta" | "jeton" | "publica" | "firma">, antet: Antet, pachet?: Uint8Array, progres?: (f: number) => void,
+  chei: string[] = CHEI_CERTIFICAT): Promise<string> {
+  const info = await r<{ firma?: unknown }>("casuta-info", { id: om.casuta, t: om.jeton });
+  if (om.firma) {
+    const d = await verificOmFirma(info.firma, om.casuta, chei);
+    if (!d || d.firma.cui !== om.firma.cui || d.firma.tara !== om.firma.tara) throw new EroareRelay(403, "firma");
+    if (d.publica !== om.publica) throw new EroareRelay(409, "firma-cheie");
+  }
   const item = b64url(aleator(16));
   const sigilat = await sigilez(eu, dinB64url(om.publica), antet, pachet, { u: item, la: new Date().toISOString() });
   if (bucati(sigilat.length) > MAX_BUCATI) throw new EroareRelay(413, "prea-mare");
@@ -413,15 +490,18 @@ export async function trimitLui(r: Relay, eu: Chei, om: Pick<Om, "casuta" | "jet
  * mailbox would otherwise send their papers elsewhere (P2). Only once they took this phone off (the token refused) does
  * a card they gave again, opened straight, move them, as their own signed greeting would.
  */
-export async function adaug(r: Relay, stare: StareOameni, carte: Carte, numeleMeu: string, dinLink = false): Promise<Om> {
+export async function adaug(r: Relay, stare: StareOameni, carte: Carte, numeleMeu: string, dinLink = false, firma?: OmAlFirmei): Promise<Om> {
   const l = liste(stare), eu = stare.eu!;
   const publica = b64url(carte.publica);
   if (publica === eu.publica) throw new EroareRelay(400, "eu");
+  // A firm's card only with its proof checked for this very key (dovadaCartii); a person's card with none.
+  if (!!carte.firma !== !!firma || (firma && firma.publica !== publica)) throw new EroareRelay(400, "firma");
+  const alFirmei = firma ? { nume: firma.nume, firma: { firma: firma.firma.firma, cui: firma.firma.cui, tara: firma.firma.tara } } : {};
   const fost = l.oameni.find((o) => o.publica === publica);
   if (fost && (dinLink || await r("casuta-info", { id: fost.casuta, t: fost.jeton }).then(() => true, (e) => !(e instanceof EroareRelay && e.status === 403)))) return fost;
   const { t, j } = await jetonNou(r, eu);
   try {
-    await trimitLui(r, await cheile(eu), { ...carte, publica }, { fel: "salut", nume: numeleMeu.slice(0, MAX_NUME), casuta: eu.casuta, jeton: t });
+    await trimitLui(r, await cheile(eu), { casuta: carte.casuta, jeton: carte.jeton, publica }, { fel: "salut", nume: numeleMeu.slice(0, MAX_NUME), casuta: eu.casuta, jeton: t });
   } catch (e) {
     await r("casuta-scoate", { id: eu.casuta, s: eu.s, j }).catch(() => undefined);
     throw e;
@@ -430,10 +510,10 @@ export async function adaug(r: Relay, stare: StareOameni, carte: Carte, numeleMe
   // A card opened straight, not through the relay: its key is the one its owner showed or sent.
   const verificat: Verificare | undefined = dinLink ? undefined : { la: new Date().toISOString(), cum: "carte" };
   if (fost) {
-    Object.assign(fost, { casuta: carte.casuta, jeton: carte.jeton, dela: [...fost.dela, j] });
+    Object.assign(fost, { casuta: carte.casuta, jeton: carte.jeton, dela: [...fost.dela, j] }, alFirmei);
     return fost;
   }
-  const om: Om = { id: b64url(aleator(16)), nume: carte.nume, publica, casuta: carte.casuta, jeton: carte.jeton, dela: [j], creat: new Date().toISOString(), ...(verificat ? { verificat } : {}) };
+  const om: Om = { id: b64url(aleator(16)), nume: carte.nume, publica, casuta: carte.casuta, jeton: carte.jeton, dela: [j], creat: new Date().toISOString(), ...(verificat ? { verificat } : {}), ...alFirmei };
   l.oameni.push(om);
   return om;
 }
@@ -529,7 +609,10 @@ export function casutaRelay(r: Relay, eu: Eu): SursaCasuta {
 /** What an arrival brought, once filed against the people; "pastrez": not yet (its sender is not added yet). */
 export type Primit =
   | { fel: "pastrez" }
-  | { fel: "om-nou"; om: Om }
+  | { fel: "om-nou"; om: Om; firma?: true }
+  // A person at a firm greets with another key (theirs changed, or a colleague took their clients over): kept only once
+  // the firm's proof holds for the new key and the same firm (iauCheiaNoua).
+  | { fel: "cheie-noua"; om: Om; publica: string; casuta: string; jeton: string; la: string; item: string }
   | { fel: "acte"; om: Om; pachet: Uint8Array; raspunsLa?: string; item: string }
   | ({ fel: "confirmare"; om: Om; s: string } & Deschidere)
   | { fel: "cerere"; om: Om; cerere: CerereDeLaOm };
@@ -546,6 +629,9 @@ export async function prelucrez(stare: StareOameni, eu: Chei, s: Pick<Sosire, "j
   const de = b64url(d.de);
   const om = l.oameni.find((o) => o.dela.includes(s.j));
   if (om) {
+    if (om.firma && om.publica !== de && d.antet.fel === "salut" && d.antet.f && !om.vazute?.includes(s.item) && (!om.salutLa || d.plic.la > om.salutLa)) {
+      return { fel: "cheie-noua", om, publica: de, casuta: d.antet.casuta, jeton: d.antet.jeton, la: d.plic.la, item: s.item };
+    }
     if (om.publica !== de || om.vazute?.includes(s.item) || (om.podea && d.plic.la <= om.podea)) return undefined;
     if (om.astept && d.antet.fel !== "salut") return { fel: "pastrez" };
     const vazute = [...(om.vazute ?? []), s.item], la = [...(om.vazuteLa ?? (om.vazute ?? []).map(() => "")), d.plic.la];
@@ -582,7 +668,7 @@ export async function prelucrez(stare: StareOameni, eu: Chei, s: Pick<Sosire, "j
   const nou: Om = { id: b64url(aleator(16)), nume: d.antet.nume, publica: de, casuta: d.antet.casuta, jeton: d.antet.jeton, dela: [s.j], creat: new Date().toISOString(),
     astept: true, vazute: [s.item], salutLa: d.plic.la };
   l.oameni.push(nou);
-  return { fel: "om-nou", om: nou };
+  return { fel: "om-nou", om: nou, ...(d.antet.f ? { firma: true as const } : {}) };
 }
 
 /** Confirmations not sent after this long are dropped. */
@@ -592,21 +678,24 @@ const ZILE_CONFIRMARE = 30;
  * Papers from a person opened into this phone's store: the confirmation, signed and queued; then every confirmation
  * still waiting is sent (one that fails waits for the next fetch). Call `salvez` after.
  */
-export async function confirmDeschiderea(r: Relay, stare: StareOameni, eu: Eu, chei: Chei, p: { om: Om; item: string; pachet: Uint8Array }): Promise<void> {
+export async function confirmDeschiderea(r: Relay, stare: StareOameni, eu: Eu, chei: Chei, p: { om: Om; item: string; pachet: Uint8Array }, certificate?: string[]): Promise<void> {
   const d: Deschidere = { item: p.item, cand: new Date().toISOString(), h: hex(await sha256(p.pachet)) };
   liste(stare).confirmari.push({ ...d, om: p.om.id, s: await semnezDeschiderea(eu, d, p.om.publica) });
-  await trimitConfirmarile(r, stare, chei);
+  await trimitConfirmarile(r, stare, chei, Date.now(), certificate);
 }
 
-/** The confirmations waiting, sent; those whose person is gone, or older than 30 days, dropped. */
-export async function trimitConfirmarile(r: Relay, stare: StareOameni, chei: Chei, acum = Date.now()): Promise<void> {
+/**
+ * The confirmations waiting, sent; those whose person is gone, or older than 30 days, dropped. `certificate`: the keys a
+ * firm's proof is checked with (trimitLui), colshare.app's unless a test gives others.
+ */
+export async function trimitConfirmarile(r: Relay, stare: StareOameni, chei: Chei, acum = Date.now(), certificate?: string[]): Promise<void> {
   const l = liste(stare);
   const raman: ConfirmareDeTrimis[] = [];
   for (const c of l.confirmari) {
     const om = l.oameni.find((o) => o.id === c.om && !o.astept);
     if (!om || acum - Date.parse(c.cand) > ZILE_CONFIRMARE * 86_400_000) continue;
     try {
-      await trimitLui(r, chei, om, { fel: "confirmare", item: c.item, cand: c.cand, h: c.h, s: c.s });
+      await trimitLui(r, chei, om, { fel: "confirmare", item: c.item, cand: c.cand, h: c.h, s: c.s }, undefined, undefined, certificate);
     } catch {
       raman.push(c);
     }

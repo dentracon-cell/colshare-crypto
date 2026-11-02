@@ -4,7 +4,8 @@
 // a check proves and what it does not. Built into colshare-web/v/v.js by scripts/acte.mjs.
 import aplicatie from "./aplicatie.json";
 import { codCheie, verific, verificFisier, type DovadaCitita } from "./dovada.ts";
-import { campuriDeclaratie } from "./dovada-text.ts";
+import { verificAnexa, type AnexaVerificata } from "./deschidere.ts";
+import { campuriDeclaratie, dataOra } from "./dovada-text.ts";
 import { firmaDovezii, type Certificat } from "./firma.ts";
 import { piciorHtml } from "./legal.ts";
 import { data, limbaTelefonului, punLimba, t, type Cheie } from "./limba.ts";
@@ -25,8 +26,14 @@ const tt = (k: Cheie, v?: Record<string, string | number>) => esc(t(k, v));
  * firm's copy. From the code alone a copy says who made it nowhere checked: anyone can write a firm's name on one (attack
  * test 2026-10-30, V2).
  */
-async function rezultat(v: DovadaCitita, firma?: Certificat): Promise<string> {
+async function rezultat(v: DovadaCitita, firma?: Certificat, anexa?: AnexaVerificata): Promise<string> {
   const deFirma = v.d.fel === "primire" || v.d.fel === "trimitere";
+  // A send link's receipt (R2, decisions.md 2026-11-02): the opening as Colshare signed it, only from the PDF; from the
+  // code alone, as the sender wrote it.
+  const link = v.d.fel === "chitanta" && v.d.o && v.tine;
+  const deschidere = !link ? "" : !anexa ? `<p class="mic">${tt("dovada.link.fisier")}</p>`
+    : `<p class="banda ${anexa.colshare ? "ok" : "rau"}">${anexa.colshare && v.d.fel === "chitanta" && v.d.deschis ? tt("dovada.link.colshare", { data: dataOra(v.d.deschis) }) : tt("dovada.link.nu-tine")}</p>
+      ${anexa.app?.tine ? `<p class="banda ok">${tt("dovada.link.app", { data: dataOra(anexa.app.la), cod: await codCheie(anexa.app.publica) })}</p>` : anexa.app ? `<p class="banda rau">${tt("dovada.link.app-nu")}</p>` : ""}`;
   // The signing firm's own field: the receiver on a receipt of papers received, the sender on one of papers sent.
   const campFirma = v.d.fel === "primire" ? t("dovada.camp.primit") : t("dovada.camp.de");
   const campuri = campuriDeclaratie(v.d).map(([k, x]): [string, string] =>
@@ -36,6 +43,7 @@ async function rezultat(v: DovadaCitita, firma?: Certificat): Promise<string> {
     ${v.tine && firma ? `<p class="banda ok">${tt(v.d.fel === "copie" ? "dovada.firma-copie" : "dovada.firma-verificata", { firma: firma.firma, cui: firma.cui })}</p>` : ""}
     ${v.tine && deFirma && !firma ? `<p class="mic">${tt("dovada.firma-nedovedita")} ${tt("dovada.firma-fisier")}</p>` : ""}
     ${v.tine && v.d.fel === "copie" && !firma ? `<p class="mic">${tt("dovada.copie-cine")}</p>` : ""}
+    ${deschidere}
     ${v.tine ? "" : `<p class="eticheta nedovedit-titlu">${tt("dovada.nedovedit")}</p>`}
     <ul class="campuri${v.tine ? "" : " nedovedit"}">${campuri.map(([k, x]) => `<li><span class="eticheta">${esc(k)}</span><span class="valoare">${esc(x)}</span></li>`).join("")}</ul>
     <p class="mic">${tt("dovada.cheie", { cod: await codCheie(v.publica) })}</p></div>`;
@@ -58,9 +66,12 @@ async function arata(): Promise<void> {
     const r = await verificFisier(new Uint8Array(await f.arrayBuffer()));
     // The firm as colshare.app's certificate names it: only for a file exactly as signed, and only when the certificate
     // is for the receipt's own key and the receipt is dated in the week after it was signed (./firma.ts firmaDovezii).
-    const firma = r.stare === "bun" && r.certificat ? await firmaDovezii(r.certificat, r.dovada.publica, r.dovada.d.data) : undefined;
+    // A link's receipt carries colshare.app's signed opening in the same place: checked against its own statement.
+    const link = r.stare === "bun" && r.dovada.d.fel === "chitanta" && r.dovada.d.o;
+    const anexa = link ? await verificAnexa(r.dovada.d, r.certificat ?? "") ?? { colshare: false } : undefined;
+    const firma = r.stare === "bun" && r.certificat && !link ? await firmaDovezii(r.certificat, r.dovada.publica, r.dovada.d.data) : undefined;
     out.innerHTML = r.stare === "fara" ? `<p class="banda rau">${tt("v.fisier.fara")}</p>`
-      : `<p class="banda ${r.stare === "bun" ? "ok" : "rau"}">${r.stare === "bun" ? tt("v.fisier.bun", { data: data(r.dovada.d.data) }) : tt("v.fisier.schimbat")}</p>${r.dovada.dovada === v?.dovada && !firma ? "" : await rezultat(r.dovada, firma)}`;
+      : `<p class="banda ${r.stare === "bun" ? "ok" : "rau"}">${r.stare === "bun" ? tt("v.fisier.bun", { data: data(r.dovada.d.data) }) : tt("v.fisier.schimbat")}</p>${r.dovada.dovada === v?.dovada && !firma && !anexa ? "" : await rezultat(r.dovada, firma, anexa)}`;
   });
 }
 
