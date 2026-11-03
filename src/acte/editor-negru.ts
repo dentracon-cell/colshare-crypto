@@ -63,7 +63,28 @@ export interface TexteEditor {
   mareste: string;
   micsoreaza: string;
   potrivesc: string;
+  /**
+   * The desk's bar (Business UX audit F7), absent on the ask page and in the app: `iesire` ("Cancel") on the left ends
+   * the whole black-out with nothing made (the promise rejects with IesireEditor); "Undo the last box" sits by the zoom;
+   * `sar` ("Skip this page") stands in for `gata` while the page has no box; `cerCutie` keeps `gata` off until one is
+   * drawn. `renunt` is not shown then.
+   */
+  iesire?: string;
+  sar?: string;
+  cerCutie?: boolean;
 }
+
+/** The person left the desk's editor with its Cancel: nothing is to be made, from this page or the ones after it. */
+export class IesireEditor extends Error {
+  constructor() { super("Box editor cancelled"); }
+}
+
+/**
+ * What Escape does in the editor: with a box drawn, Done (the boxes are kept); with none, on the desk, the desk's Cancel
+ * (nothing is made: skipping each page in turn sent the last ones uncovered, attack round 15, M1); elsewhere, that page
+ * without boxes, as before.
+ */
+export const laEscape = (areCutii: boolean, birou: boolean): "gata" | "iesire" | "fara" => (areCutii ? "gata" : birou ? "iesire" : "fara");
 
 /** Where the page is on the screen: its scale against the picture's pixels and its top-left corner, in CSS pixels. */
 interface Vedere { s: number; x: number; y: number }
@@ -92,6 +113,7 @@ export function zoomez(v: Vedere, s: number, px: number, py: number, potrivit: n
  */
 export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x: TexteEditor): Promise<{ manual: Zona[]; mrz: boolean } | undefined> {
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+  const bara = !!x.iesire;
   const lupa = (semn: string) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20"/>${semn}</svg>`;
   let manual = [...manual0], mrz = mrz0;
   let trag: { x: number; y: number; z: Zona; misc: boolean } | undefined;
@@ -103,20 +125,46 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
   strat.setAttribute("role", "dialog");
   strat.setAttribute("aria-modal", "true");
   strat.setAttribute("aria-label", x.titlu);
+  // The desk's editor takes the focus itself when the page is drawn on, so Escape and Tab keep working in it.
+  if (bara) strat.tabIndex = -1;
   strat.innerHTML = `<div class="editor-cap"><b>${esc(x.titlu)}</b><small>${esc(x.text)}</small></div>
     <div class="editor-loc"><canvas class="editor-panza"></canvas>
+      ${bara ? `<div class="editor-unelte"><button type="button" class="editor-anulez editor-inapoi" aria-label="${esc(x.anulez)}" title="${esc(x.anulez)}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>` : ""}
       <div class="editor-zoom"><button type="button" class="editor-minus" aria-label="${esc(x.micsoreaza)}" title="${esc(x.micsoreaza)}">${lupa('<path d="M7.5 10.5h6"/>')}</button>
         <button type="button" class="editor-tot" title="${esc(x.potrivesc)}">100%</button>
-        <button type="button" class="editor-plus" aria-label="${esc(x.mareste)}" title="${esc(x.mareste)}">${lupa('<path d="M7.5 10.5h6M10.5 7.5v6"/>')}</button></div></div>
+        <button type="button" class="editor-plus" aria-label="${esc(x.mareste)}" title="${esc(x.mareste)}">${lupa('<path d="M7.5 10.5h6M10.5 7.5v6"/>')}</button></div>${bara ? "</div>" : ""}</div>
     <div class="editor-jos">${x.mrz ? `<label class="comutator"><input type="checkbox" role="switch" class="editor-mrz"${mrz ? " checked" : ""}><span class="editor-pilula"></span><span class="editor-eticheta"><b>${esc(x.mrz)}</b></span></label>` : ""}
-      <div class="editor-butoane"><button type="button" class="buton mic text editor-anulez">${esc(x.anulez)}</button>
-      <button type="button" class="buton contur editor-renunt">${esc(x.renunt)}</button><button type="button" class="buton plin editor-gata">${esc(x.gata)}</button></div></div>`;
+      ${bara
+    ? `<div class="editor-butoane cu-iesire"><button type="button" class="buton text editor-iesire">${esc(x.iesire!)}</button>
+      ${x.sar ? `<button type="button" class="buton contur editor-sar">${esc(x.sar)}</button>` : ""}<button type="button" class="buton plin editor-gata">${esc(x.gata)}</button></div></div>`
+    : `<div class="editor-butoane"><button type="button" class="buton mic text editor-anulez">${esc(x.anulez)}</button>
+      <button type="button" class="buton contur editor-renunt">${esc(x.renunt)}</button><button type="button" class="buton plin editor-gata">${esc(x.gata)}</button></div></div>`}`;
   document.body.append(strat);
   // It comes up instead of appearing in one frame (motion audit 2026-11-01, A12).
   if (!faraMiscare()) strat.classList.add("intra");
   const panza = strat.querySelector<HTMLCanvasElement>(".editor-panza")!;
   const loc = strat.querySelector<HTMLElement>(".editor-loc")!;
   const tot = strat.querySelector<HTMLButtonElement>(".editor-tot")!;
+  const gata = strat.querySelector<HTMLButtonElement>(".editor-gata")!;
+  const sar = strat.querySelector<HTMLButtonElement>(".editor-sar");
+  const inapoiCutie = strat.querySelector<HTMLButtonElement>(".editor-inapoi");
+  /** The desk's buttons follow the page: Skip while it has no box, the page's next step once it has one. */
+  const potrivescButoanele = () => {
+    if (!bara) return;
+    const are = manual.length > 0 || mrz;
+    const f = document.activeElement;
+    if (sar) { sar.hidden = are; gata.hidden = !are; }
+    gata.disabled = !!x.cerCutie && !are;
+    if (inapoiCutie) inapoiCutie.disabled = !manual.length;
+    // A button that went away with the focus on it hands the focus on, so Escape and Tab still work in the editor.
+    if (f instanceof HTMLButtonElement && strat.contains(f) && (f.disabled || f.hidden)) focusez();
+  };
+  // On the desk the editor itself holds the focus, never Skip or the last page's Send: Enter must not send pages the
+  // person never covered (attack round 15, M1). Tab still reaches every button.
+  const focusez = () => {
+    const b = bara ? undefined : [sar, gata].find((x) => x && !x.hidden && !x.disabled);
+    (b ?? strat).focus();
+  };
   const pagina = { w: img.width, h: img.height };
   const spatiul = () => { const r = loc.getBoundingClientRect(); return { w: r.width || 320, h: r.height || 400 }; };
   const potrivit = () => { const l = spatiul(); return Math.min(l.w / pagina.w, l.h / pagina.h); };
@@ -148,6 +196,7 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
       g.strokeRect(z.x * pagina.w, z.y * pagina.h, z.w * pagina.w, z.h * pagina.h);
     }
     tot.textContent = `${Math.round((v.s / potrivit()) * 100)}%`;
+    potrivescButoanele();
   };
   // A point of the space (CSS pixels from its corner) and the same point on the page (0–1 of its sides).
   const inSpatiu = (e: { clientX: number; clientY: number }) => { const r = loc.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
@@ -256,9 +305,11 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
   for (const b of blocate) b.inert = true;
   requestAnimationFrame(() => { potrivitInainte = potrivit(); pun({ s: potrivit(), x: 0, y: 0 }); });
   pun(v);
-  strat.querySelector<HTMLButtonElement>(".editor-gata")!.focus();
-  return new Promise((ok) => {
-    const inchid = (r: { manual: Zona[]; mrz: boolean } | undefined) => {
+  potrivescButoanele();
+  // The first button takes the focus; while it waits for a box, the editor itself does, so Escape still reaches it.
+  if (bara) focusez(); else gata.focus();
+  return new Promise((ok, rau) => {
+    const inchid = (r: { manual: Zona[]; mrz: boolean } | undefined, iesit = false) => {
       deschise.delete(anulez);
       removeEventListener("resize", laRedim);
       document.documentElement.style.overflow = sus;
@@ -267,15 +318,22 @@ export function editezNegru(img: ImageBitmap, manual0: Zona[], mrz0: boolean, x:
       if (!faraMiscare() && !faraUrma) lasaInUrma(strat, "editor-pleaca", 200);
       strat.remove();
       inapoi?.focus();
-      ok(r);
+      if (iesit) rau(new IesireEditor()); else ok(r);
     };
     const anulez = () => inchid(undefined);
     deschise.add(anulez);
     strat.querySelector(".editor-gata")!.addEventListener("click", () => inchid({ manual, mrz }));
-    strat.querySelector(".editor-renunt")!.addEventListener("click", () => inchid(undefined));
+    strat.querySelector(".editor-renunt")?.addEventListener("click", () => inchid(undefined));
+    sar?.addEventListener("click", () => inchid(undefined));
+    strat.querySelector(".editor-iesire")?.addEventListener("click", () => inchid(undefined, true));
     strat.addEventListener("keydown", (e) => {
-      // Escape never throws away boxes drawn: with any, it is Done; with none, it cancels (attack test 2026-10-30, N4).
-      if (e.key === "Escape") { e.stopPropagation(); inchid(manual.length || mrz ? { manual, mrz } : undefined); }
+      // Escape never throws away boxes drawn (attack test 2026-10-30, N4), and on the desk never skips a page either:
+      // there, with no box, it is "Cancel", so nothing is sent (attack round 15, M1).
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        const ce = laEscape(manual.length > 0 || mrz, bara);
+        inchid(ce === "gata" ? { manual, mrz } : undefined, ce === "iesire");
+      }
       else if ((e.target as HTMLElement).tagName === "INPUT") return;
       else if (e.key === "+" || e.key === "=") zoomLin(v.s * PAS);
       else if (e.key === "-") zoomLin(v.s / PAS);
