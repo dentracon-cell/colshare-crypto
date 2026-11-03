@@ -9,6 +9,7 @@
 import { BUCATA, citesteAdresa, curatNota, EroareRelay, MAX_BUCATI, relay, trimitInCerere } from "./link.ts";
 import { lasaInUrma } from "./trecere.ts";
 import { impacheteaza, type FisierPachet } from "./pachet.ts";
+import { iauRecipisa, recipiseleCererii, rezumatActe, type RecipisaGasita } from "./recipisa-sosire.ts";
 import { pdfDinPagini } from "../core/scanner/pdf.ts";
 import aplicatie from "./aplicatie.json";
 import { montezBanda, punLacat, sigiliuApasat } from "./pagina-material.ts";
@@ -51,6 +52,7 @@ const ICO: Record<string, string> = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   sageata: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   urc: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
+  jos: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
   telefon: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
   ascund: '<rect x="4" y="9" width="16" height="6" rx="1" fill="currentColor"/><path d="M3 5h18M3 19h18"/>',
 };
@@ -61,6 +63,10 @@ document.title = `${t("a.titlu")} · ${aplicatie.nume}`;
 const r = relay("");
 /** A firm's ask with a certificate that holds (./firma.ts): the firm is named as checked, not as typed. */
 let firma: Certificat | undefined;
+/** A firm's short link's key (./firma.ts): it also opens the firm's receipts left on the request (./recipisa-sosire.ts). */
+let cheieLink: Uint8Array | undefined;
+/** The firm's receipts on this request, as the page last found them. */
+let recipiseCunoscute: RecipisaGasita[] = [];
 
 /**
  * What one slot holds: photos as JPEG pages (with a picture to show), PDFs as they are. A page with something hidden
@@ -228,6 +234,7 @@ function formular(mesaj?: string) {
     ${titlu && ce.length ? `<p class="cerere-pentru">${tt("a.pentru", { titlu: mare(titlu) })}</p>` : ""}
     ${adresa.text.nota ? `<figure class="cerere-nota"><figcaption>${firma ? tt("a.nota.firma", { firma: firma.firma }) : tt("a.nota")}</figcaption><p>${esc(adresa.text.nota)}</p></figure>` : ""}
     <p class="cerere-sub">${firma ? tt("a.sub.firma") : tt("a.sub")}</p>
+    ${firma && cheieLink ? `<div id="recipise-firmei"></div>` : ""}
     ${trusaCerere ? `<details class="card card-trusa"><summary>${tt("trusa.urmeaza", { nume: trusaCerere.scurt[limbaTrusa(limbaCurenta())] })}</summary>${htmlTrusa(trusaCerere, 3)}</details>` : ""}
     ${atentie()}
     ${laTelefon()}
@@ -245,6 +252,7 @@ function formular(mesaj?: string) {
     </div>
   </div>${invit}`;
   umplute = new Set(sloturi.map((s, i) => (s.piese.length ? i : -1)).filter((i) => i >= 0));
+  umpleRecipisele();
   if (ocupat) for (const x of el.querySelectorAll<HTMLButtonElement | HTMLInputElement>(".cerere-acte button, .cerere-acte input")) x.disabled = true;
   for (const x of el.querySelectorAll<HTMLInputElement>("input[data-slot]")) {
     x.addEventListener("change", () => void adaugInSlot(Number(x.dataset.slot), x.files ?? []));
@@ -409,6 +417,8 @@ async function trimit() {
     });
     await rabda;
     const trimise = fisiere.map((f) => f.nume);
+    // The papers' digest, as the firm's receipt will carry it: the receipt of these papers is found by it.
+    const h = firma && cheieLink ? await rezumatActe(fisiere.map((x) => x.date)).catch(() => "") : "";
     // What was asked and not sent: said once, so "Send more" has a reason.
     const lipsa = adresa.text.ce.map((x, i) => ({ nume: mare(numeCerut(x)), i })).filter(({ i }) => !sloturi[i]?.piese.length);
     for (const s of sloturi) for (const p of s.piese) if (p.url) URL.revokeObjectURL(p.url);
@@ -426,15 +436,93 @@ async function trimit() {
       <h1>${firma ? tt("a.gata.firma", { firma: firma.firma }) : tt("a.gata")}</h1>
       <ul class="trimise">${trimise.map((n) => `<li>${ico("fisier")}<span>${esc(mare(n))}</span></li>`).join("")}</ul>
       <p class="sigilat-text">${tt(firma ? "a.trimis.firma" : "a.trimis")}</p></section>
+      ${h ? `<div id="recipisa-loc"><p class="recipisa-astept"><span class="punct-viu"></span>${tt("a.recipisa.astept", { firma: firma!.firma })}</p></div>` : ""}
       ${lipsa.length ? `<p class="banda lipsa">${lipsaHtml(lipsa)}</p>` : ""}
       <button class="buton-ton" id="inca">${ico("plus")}${tt("a.inca")}</button></div>${invit}`;
     cifruFond(el.querySelector<HTMLCanvasElement>(".sigilat .cifru-trimit")!, { alfa: 0.09 });
     document.getElementById("inca")!.addEventListener("click", () => formular());
     for (const b of el.querySelectorAll<HTMLButtonElement>("[data-lipsa]")) b.addEventListener("click", () => laSlot(Number(b.dataset.lipsa)));
+    if (h) void asteptRecipisa(h);
   } catch (e) {
     opresteCifru();
     formular(eroare(e));
   }
+}
+
+/** When a receipt was left on the request, in the page's language. */
+function candRecipisa(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(limbaCurenta(), { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+/** One of the firm's receipts: that the firm received the papers, when, and the button that saves its PDF here. */
+const recipisaHtml = (x: RecipisaGasita) => `<div class="recipisa-firma">${ico("scut")}<span><b>${tt("a.recipisa.gata", { firma: firma?.firma ?? "" })}</b>
+    <small>${esc(candRecipisa(x.la))}</small></span><button class="buton-ton" data-recipisa="${esc(x.r)}">${ico("jos")}${tt("a.recipisa.descarc")}</button></div>`;
+
+/** The receipts' buttons under `loc`: each fetches its PDF, checks and opens it, and saves it on this device. */
+function legRecipisele(loc: HTMLElement, lista: RecipisaGasita[]): void {
+  for (const b of loc.querySelectorAll<HTMLButtonElement>("[data-recipisa]")) {
+    const x = lista.find((y) => y.r === b.dataset.recipisa);
+    if (!x) continue;
+    b.addEventListener("click", async () => {
+      if (!adresa || !cheieLink || b.disabled) return;
+      b.disabled = true;
+      try {
+        const pdf = await iauRecipisa(r, adresa.id, cheieLink, x);
+        const url = URL.createObjectURL(new Blob([pdf as BlobPart], { type: "application/pdf" }));
+        const a = Object.assign(document.createElement("a"), { href: url, download: `${x.nume.replace(/[\\/:*?"<>|]+/g, " ").trim() || "Colshare"}.pdf` });
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch (e) {
+        b.insertAdjacentHTML("afterend", `<p class="banda rau">${esc(eroare(e))}</p>`);
+      } finally {
+        b.disabled = false;
+      }
+    });
+  }
+}
+
+/** The firm's receipts on the request, in the letter (a client back on the link finds what the firm received). */
+function umpleRecipisele(): void {
+  const loc = document.getElementById("recipise-firmei");
+  if (!loc || !recipiseCunoscute.length) return;
+  loc.innerHTML = `<div class="recipise-firmei">${recipiseCunoscute.map(recipisaHtml).join("")}</div>`;
+  legRecipisele(loc, recipiseCunoscute);
+}
+
+/** The firm's receipts, fetched once the form is up. */
+async function afluRecipisele(): Promise<void> {
+  if (!adresa || adresa.fel !== "cerere" || !cheieLink || !firma) return;
+  recipiseCunoscute = (await recipiseleCererii(r, adresa.id, cheieLink).catch(() => [])).sort((x, y) => y.la.localeCompare(x.la));
+  umpleRecipisele();
+}
+
+/**
+ * After a send, the firm's receipt of these papers, looked for while the screen is up (a firm's device takes them within
+ * seconds when it is on); when none came in three minutes, the client is told it waits on the link.
+ */
+async function asteptRecipisa(h: string): Promise<void> {
+  if (!adresa || adresa.fel !== "cerere" || !cheieLink || !firma) return;
+  const id = adresa.id, kl = cheieLink;
+  for (let i = 0; i < 45; i++) {
+    await new Promise((ok) => setTimeout(ok, i ? 4000 : 1500));
+    if (!document.getElementById("recipisa-loc")) return;
+    const x = (await recipiseleCererii(r, id, kl).catch(() => [])).find((y) => y.h === h);
+    const loc = document.getElementById("recipisa-loc");
+    if (!loc) return;
+    if (!x) continue;
+    if (!recipiseCunoscute.some((y) => y.r === x.r)) recipiseCunoscute = [x, ...recipiseCunoscute];
+    loc.innerHTML = recipisaHtml(x);
+    legRecipisele(loc, [x]);
+    return;
+  }
+  const loc = document.getElementById("recipisa-loc");
+  if (loc) loc.innerHTML = `<p class="recipisa-astept">${tt("a.recipisa.tarziu", { firma: firma.firma })}</p>`;
 }
 
 const inchisa = () => { el.innerHTML = `<div class="pg-cerere"><h1>${tt("a.titlu")}</h1><p class="banda rau">${tt("a.inchisa")}</p></div>${invit}`; };
@@ -445,6 +533,7 @@ async function pornesc(): Promise<void> {
   if (adresa?.fel === "cerere-firma") {
     el.innerHTML = `<div class="pg-cerere"><p class="progres">${tt("a.incarc")}</p></div>`;
     try {
+      cheieLink = adresa.cheie;
       adresa = await deschidCerereFirma(r, adresa.id, adresa.cheie);
     } catch (e) {
       if (e instanceof EroareRelay && e.cod === "inchisa") return inchisa();
@@ -469,6 +558,8 @@ async function pornesc(): Promise<void> {
   const gata = await Promise.race([Promise.all([cert, info]).then(([, e]) => ({ e })), new Promise<null>((ok) => setTimeout(() => ok(null), 800))]);
   if (gata?.e) { raspuns(gata.e); return; }
   formular();
+  // The firm's receipts left on the request, if any (./recipisa-sosire.ts).
+  void afluRecipisele();
   if (gata) return;
   void cert.then((c) => { if (c) formular(); });
   void info.then((e) => { if (e) raspuns(e); });

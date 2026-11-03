@@ -204,6 +204,8 @@ export interface StareFirma {
   certificat?: string | null;
   /** `s`: the approving device's signature over what it sealed to this one (deschidInelNou). */
   inel?: { g: number; d: string; s?: string };
+  /** The generation of the ring kept sealed to the recovery key, that key, and the copy's SHA-256 (punInelulRecuperarii). */
+  inelR?: { g: number; r: string; h?: string };
 }
 
 // ------------------------------------------------------------------ the key ring between seats
@@ -212,7 +214,7 @@ export async function sigilezInel(inel: Inel, catre: string): Promise<string> {
   return b64url(await sigileazaPentruLacat(dinB64url(catre), enc(JSON.stringify(inel)), INFO_INEL));
 }
 
-export async function deschidInel(loc: Loc, d: string): Promise<Inel | undefined> {
+export async function deschidInel(loc: Pick<Loc, "privata" | "publica">, d: string): Promise<Inel | undefined> {
   const b = await deschideCuLacat(await importaPrivata(dinB64url(loc.privata)), dinB64url(loc.publica), dinB64url(d), INFO_INEL);
   if (!b) return undefined;
   try {
@@ -494,6 +496,97 @@ export async function persoaneDinRecuperare(apel: ApelFirma, cheie: string, inel
   return persoane;
 }
 
+const textInelDinRecuperare = (cheie: string, t: number) => `colshare-inel-din-recuperare-v1\n${cheie}\n${t}`;
+
+/**
+ * The ring sealed to the recovery key the way every device of the firm can open again (release round 16, M1): the
+ * sealing's ephemeral key is the firm's current generation, so the recovery file opens it as any sealed ring
+ * (deschidInel), and a device holding that generation opens it with the recovery key's public half. A copy a seat put
+ * with anything else in it is then seen, and sealed again.
+ */
+async function cheieCopie(curenta: CheieFirma, recuperare: string): Promise<CryptoKey> {
+  const r = dinB64url(recuperare), p = dinB64url(curenta.publica);
+  const secret = await crypto.subtle.deriveBits({ name: "ECDH", public: await crypto.subtle.importKey("raw", r as BufferSource, { name: "ECDH", namedCurve: "P-256" }, false, []) }, await importaPrivata(dinB64url(curenta.privata)), 256);
+  const baza = await crypto.subtle.importKey("raw", secret, "HKDF", false, ["deriveKey"]);
+  const sare = new Uint8Array(p.length + r.length);
+  sare.set(p);
+  sare.set(r, p.length);
+  return crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: sare, info: INFO_INEL as BufferSource }, baza, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+
+export async function sigilezCopiaRecuperarii(inel: Inel, recuperare: string): Promise<string> {
+  const curenta = cheiaCurenta(inel), p = dinB64url(curenta.publica);
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, await cheieCopie(curenta, recuperare), enc(JSON.stringify(inel)) as BufferSource));
+  const o = new Uint8Array(p.length + 12 + ct.length);
+  o.set(p);
+  o.set(nonce, p.length);
+  o.set(ct, p.length + 12);
+  return b64url(o);
+}
+
+/** Whether the copy kept for the recovery key opens with this device's current generation and holds every key it has. */
+export async function copiaAcopera(inel: Inel, recuperare: string, d: string): Promise<boolean> {
+  const curenta = cheiaCurenta(inel), p = dinB64url(curenta.publica), b = dinB64url(d);
+  if (b.length < p.length + 12 + 16 || b64url(b.subarray(0, p.length)) !== curenta.publica) return false;
+  try {
+    const x = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: b.subarray(p.length, p.length + 12) as BufferSource }, await cheieCopie(curenta, recuperare), b.subarray(p.length + 12) as BufferSource))) as Inel;
+    const are = new Map((Array.isArray(x.chei) ? x.chei : []).map((k) => [k.g, k]));
+    return inel.chei.every((k) => { const y = are.get(k.g); return !!y && y.privata === k.privata && y.publica === k.publica && y.lant === k.lant; });
+  } catch {
+    return false;
+  }
+}
+
+/** Copies this session already opened and found whole (their SHA-256), so a sync fetches a copy only when it changed. */
+const copiiBune = new Set<string>();
+const rezumat = async (d: string) => b64url(await sha256(enc(d)));
+
+/**
+ * The firm's ring kept sealed to its recovery key at the current generation (decisions.md 2026-11-03, "The recovery
+ * file never goes stale"), put when the copy is behind, or when it doesn't open with this generation or lacks a key this
+ * device holds (a seat can put anything there: release round 16, M1). Only to the recovery key this device trusts
+ * (Director.recuperare), and only when that is still the firm's. True when it put one.
+ */
+export async function punInelulRecuperarii(apel: ApelFirma, loc: Loc, inel: Inel, st: StareFirma, recuperare: string | undefined): Promise<boolean> {
+  if (!recuperare || recuperare !== st.recuperare || !inel.chei.length || st.rotire) return false;
+  const g = cheiaCurenta(inel).g;
+  if (g !== st.g) return false;
+  if (st.inelR?.g === g && st.inelR.r === recuperare) {
+    if (st.inelR.h && copiiBune.has(st.inelR.h)) return false;
+    const x = await apel<{ d?: string; h?: string }>("inel-recuperare-ia", {}, loc).catch(() => undefined);
+    if (typeof x?.d === "string" && (await copiaAcopera(inel, recuperare, x.d))) {
+      copiiBune.add(await rezumat(x.d));
+      return false;
+    }
+  }
+  const d = await sigilezCopiaRecuperarii(inel, recuperare);
+  await apel("inel-recuperare", { g, r: recuperare, d }, loc);
+  const h = await rezumat(d);
+  copiiBune.add(h);
+  st.inelR = { g, r: recuperare, h };
+  return true;
+}
+
+/**
+ * The ring of a device starting again from the recovery file: the file's own, and the newer generations the server kept
+ * sealed to the recovery key, taken only as far as they chain to the file's (primescInel), so a ring anyone sealed to
+ * the public recovery key adds nothing. The file's ring alone when there is no copy, or the firm's recovery key is no
+ * longer the file's (starting then fails as it did before); a wrong clock or a busy server is said.
+ */
+export async function inelDinRecuperare(apel: ApelFirma, cheie: string, inel: Inel, rec: CheieRecuperare, ceas = () => Date.now()): Promise<Inel> {
+  const k = cheie.trim().toUpperCase(), t = ceas();
+  let x: { d?: unknown };
+  try {
+    x = await apel<{ g: number; d: string }>("inel-din-recuperare", { cheie: k, t, sig: await semnez(rec.privata, textInelDinRecuperare(k, t)) });
+  } catch (e) {
+    if (e instanceof EroareFirma && (e.status === 404 || e.status === 403)) return inel;
+    throw e;
+  }
+  const venit = typeof x.d === "string" ? await deschidInel(rec, x.d) : undefined;
+  return venit ? primescInel(inel, venit) : inel;
+}
+
 /**
  * A person taken back from the recovery file (activez `reia`): their open asks, moved to this device's new person,
  * sealed again to it. The ask's key opens with the recovery key; its details too for asks made from 2026-10-25, else
@@ -760,6 +853,8 @@ export interface CerereFirma extends MetaCerere {
    * the client answers from the app, and it is a folder of their file.
    */
   om?: string;
+  /** A person's own ask: its details are sealed to the person's key (and the recovery key), not the firm's. */
+  aPersoanei?: true;
 }
 
 /**
@@ -814,11 +909,46 @@ export async function facCerereFirma(apel: ApelFirma, loc: Loc, inel: Inel, cert
     mr: b64url(await sigileazaPentruLacat(dinB64url(persoana.recuperare), enc(JSON.stringify(cu)), INFO_META)),
   } : {};
   await apel("cerere-pune", { id, m, p: b64url(p), g: k.g, ...aPersoanei }, loc);
-  return { ...cu, id, g: k.g, creat: new Date().toISOString(), adresa: adresaCerereFirmaDin(domeniu, { id, ...cu })! };
+  return { ...cu, id, g: k.g, creat: new Date().toISOString(), adresa: adresaCerereFirmaDin(domeniu, { id, ...cu })!, ...(a && persoana ? { aPersoanei: true as const } : {}) };
 }
 
 /** The longest People card an ask carries. */
 const MAX_CARTE_CERERE = 600;
+
+/**
+ * Papers added to an open ask (decisions.md 2026-11-03, "The firm adds a paper to an open request"): the link's contents
+ * read back from the relay with the link's key, the list replaced, and sealed again under the same key; the details
+ * sealed again as facCerereFirma seals them (to the person's key and the recovery key for a person's ask, else to the
+ * firm's current key). The ask's key, its certificate, its days and what waits in it stay. The client's page shows the
+ * new list when it is opened or reloaded. Throws EroareFirma 404 "inchisa" when the ask is no longer open.
+ */
+export async function schimbCerereFirma(r: Relay, apel: ApelFirma, loc: Loc, inel: Inel, c: CerereFirma, ce: string[],
+  persoana?: { cheie: Persoana; recuperare: string }): Promise<CerereFirma> {
+  if (!c.kl || c.fel || c.om) throw new EroareFirma(404, "inchisa");
+  const kl = dinB64url(c.kl);
+  const { p } = await r<{ p?: string }>("cerere-info", { id: c.id });
+  if (!p) throw new EroareFirma(404, "inchisa");
+  const b = dinB64url(p);
+  const text = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: b.subarray(0, 12) as BufferSource, additionalData: AAD_SCURT(c.id) as BufferSource },
+    await aesScurt(kl, "decrypt"), b.subarray(12) as BufferSource))) as Record<string, unknown>;
+  const lista = [...new Set(ce.map((x) => x.trim().slice(0, 200)).filter(Boolean))].slice(0, 12);
+  const iv = aleator(12);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv as BufferSource, additionalData: AAD_SCURT(c.id) as BufferSource }, await aesScurt(kl, "encrypt"),
+    enc(JSON.stringify({ ...text, c: lista })) as BufferSource));
+  const nou = new Uint8Array(12 + ct.length);
+  nou.set(iv);
+  nou.set(ct, 12);
+  const meta: MetaCerere = { titlu: c.titlu, client: c.client, ce: lista, kl: c.kl, ...(c.k ? { k: c.k } : {}), ...(c.l ? { l: c.l } : {}), ...(c.email ? { email: c.email } : {}),
+    ...(c.cl ? { cl: c.cl } : {}), ...(c.nota ? { nota: c.nota } : {}) };
+  // The firm's details stay sealed to the key the ask was made under (its generation opens the papers too).
+  const k = inel.chei.find((x) => x.g === c.g);
+  const alPersoanei = c.aPersoanei && persoana;
+  if ((c.aPersoanei && !persoana) || (!alPersoanei && !k)) throw new EroareFirma(409, "generatie");
+  const m = b64url(await sigileazaPentruLacat(dinB64url(alPersoanei ? persoana.cheie.publica : k!.publica), enc(JSON.stringify(meta)), INFO_META));
+  const mr = alPersoanei ? { mr: b64url(await sigileazaPentruLacat(dinB64url(persoana.recuperare), enc(JSON.stringify(meta)), INFO_META)) } : {};
+  await apel("cerere-schimba", { id: c.id, m, p: b64url(nou), g: c.g, ...mr }, loc);
+  return { ...c, ce: lista };
+}
 
 /** The short link of a firm's ask (any seat: the key is in its sealed details). */
 export function adresaCerereFirmaDin(domeniu: string, c: { id: string; kl?: string; l?: string }): string | undefined {
