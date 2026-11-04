@@ -9,7 +9,7 @@ import { t, type Cheie } from "./limba.ts";
  * app's name to the home page (which says it is coming). "live": Play buttons on the home page and, on Android, a Play
  * link under each invitation.
  */
-export const LANSARE: "curand" | "live" = "curand";
+export const LANSARE: "curand" | "live" = "live";
 
 /** The app's page on Google Play. */
 export const PLAY = `https://play.google.com/store/apps/details?id=${aplicatie.id}`;
