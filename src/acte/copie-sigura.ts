@@ -50,9 +50,17 @@ export const textMarcaj = (m: Marcaj) => [m.copie, m.pentru, m.scop, m.data].map
  * front). Only for the photo, which is off by default: the recipient usually has to see the face. The fields that
  * matter are found on the picture itself (./zone.ts), never guessed from a layout.
  */
-export function zonaPoza(w: number, h: number): Zona {
+export function zonaPoza(w: number, h: number, mrz?: Zona): Zona {
   const card = Math.max(w, h) / Math.min(w, h) > 1.5;
-  return card ? { x: 0.02, y: 0.18, w: 0.33, h: 0.78 } : { x: 0.02, y: 0.14, w: 0.3, h: 0.56 };
+  if (card) return { x: 0.02, y: 0.18, w: 0.33, h: 0.78 };
+  // A passport with its <<< lines found: the photo sits right above them, on the data page (125 × 88 mm) as wide as the
+  // picture. Photographed with its facing page, the fixed box covered the empty facing page and left the face (user test
+  // 2026-11-04, P2).
+  if (mrz && mrz.y > 0.3) {
+    const pagina = Math.min(1, (w * 88) / 125 / h), sus = Math.max(0, mrz.y - 0.72 * pagina);
+    return { x: 0.025, y: sus, w: 0.275, h: mrz.y - sus };
+  }
+  return { x: 0.02, y: 0.14, w: 0.3, h: 0.56 };
 }
 
 /**

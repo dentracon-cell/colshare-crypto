@@ -124,6 +124,17 @@ interface Rand {
   chars: { c: string; b: Cutie; s?: boolean; l: number }[];
 }
 
+/** Helvetica's advance widths (per 1000 of the size) for printable ASCII, from " " to "~". */
+const HELVETICA = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556,
+  556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722,
+  667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833,
+  556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584];
+/** A character's width: its own, or its letter's without the accent (ș as s), else an average letter's. */
+function latime(c: string): number {
+  const baza = c.normalize("NFD")[0] ?? c, k = baza.charCodeAt(0) - 32;
+  return k >= 0 && k < HELVETICA.length ? HELVETICA[k] : 556;
+}
+
 const uneste = (c: Cutie[]): Cutie => ({ x0: Math.min(...c.map((b) => b.x0)), y0: Math.min(...c.map((b) => b.y0)), x1: Math.max(...c.map((b) => b.x1)), y1: Math.max(...c.map((b) => b.y1)) });
 
 /**
@@ -134,8 +145,11 @@ function caractere(l: LinieText): { c: string; b: Cutie; s?: boolean }[] {
   let out: { c: string; b: Cutie; s?: boolean }[];
   if (l.chars?.length) out = l.chars.flatMap((x) => [...x.text].map((c) => ({ c, b: x.bbox })));
   else {
-    const n = [...l.text].length || 1, w = (l.bbox.x1 - l.bbox.x0) / n;
-    out = [...l.text].map((c, i) => ({ c, b: { x0: l.bbox.x0 + i * w, y0: l.bbox.y0, x1: l.bbox.x0 + (i + 1) * w, y1: l.bbox.y1 } }));
+    // Spread by each character's width in Helvetica/Arial, the usual PDF faces: spread evenly, a name's wide capitals sat
+    // later than the label's narrow letters and a word's box began one letter late (user test 2026-11-04, P3).
+    const c = [...l.text], latimi = c.map(latime), tot = latimi.reduce((s, x) => s + x, 0) || 1, k = (l.bbox.x1 - l.bbox.x0) / tot;
+    let x = l.bbox.x0;
+    out = c.map((ch, i) => { const x0 = x; x += latimi[i] * k; return { c: ch, b: { x0, y0: l.bbox.y0, x1: x, y1: l.bbox.y1 } }; });
   }
   const r: { c: string; b: Cutie; s?: boolean }[] = [];
   let spatiu = true;
@@ -598,4 +612,23 @@ export function deseneazaNegru(g: DesenNegru, img: CanvasImageSource, w: number,
     const x0 = Math.floor(z.x * w), y0 = Math.floor(z.y * h);
     g.fillRect(x0, y0, Math.ceil((z.x + z.w) * w) - x0, Math.ceil((z.y + z.h) * h) - y0);
   }
+}
+
+/**
+ * Whether a PDF of pictures carries text: a font, a text object, or one of `cifre` (the hidden numbers) anywhere outside
+ * its pictures' own bytes. Each picture's JPEG is skipped by the /Length its dictionary gives: read as text, a photo's
+ * bytes spell "BT" by chance (7 of 22 sample photos did), and the copy could then never be kept (Cristian, 2026-11-04).
+ */
+export function pdfCuText(pdf: Uint8Array, cifre: string[]): boolean {
+  const brut = new TextDecoder("latin1").decode(pdf);
+  const imagine = /<<[^<>]*\/Subtype\s*\/Image\b[^<>]*\/Length\s+(\d+)[^<>]*>>\s*stream\r?\n/g;
+  let text = "", de = 0;
+  for (let m = imagine.exec(brut); m; m = imagine.exec(brut)) {
+    const capat = m.index + m[0].length;
+    text += brut.slice(de, capat);
+    de = capat + Number(m[1]);
+    imagine.lastIndex = de;
+  }
+  text += brut.slice(de);
+  return /\/Font\b|\bBT\b/.test(text) || cifre.some((x) => text.includes(x));
 }

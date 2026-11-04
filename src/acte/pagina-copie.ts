@@ -45,8 +45,10 @@ el.innerHTML = `<div class="unealta-corp"><div class="unealta-st">
     <li><span class="nr">03</span><div><p class="pas-titlu">${tt("w.pas3")}</p>
       <div class="actiuni"><label class="buton plin ocru" id="aleg">${tt("w.aleg")}<input type="file" id="poza" accept="image/*" multiple hidden></label>
       <button class="buton contur" id="desenez" disabled>${tt("copie.desenez")}</button></div>
+      <p class="banda rau" id="fisier-rau" role="alert" hidden>${tt("scan.fisier")}</p>
       <div id="lucru" hidden>
         <div class="cadru" id="pagini"></div>
+        <p class="mic" id="doua" role="status" hidden>${tt("w.doua")}</p>
         <p class="banda" id="indemn" hidden>${tt("copie.desenez.activ")}</p>
         <div class="comutatoare">
           <label class="comutator"><span><b>${tt("copie.mrz")}</b></span><input type="checkbox" role="switch" id="c-mrz" checked></label>
@@ -115,14 +117,29 @@ function arata(): void {
   $("indemn").hidden = !desenez;
   $("desenez").classList.toggle("activ", desenez);
   for (const b of el.querySelectorAll<HTMLButtonElement>("[data-scop]")) b.classList.toggle("activ", b.dataset.scop === valoare("scop"));
+  // The warning goes once who or what for is there, not at the next Download (user test 2026-11-04, L12).
+  if (valoare("pentru") || valoare("scop")) $("lipsa").hidden = true;
   foaieVie();
 }
 
 $<HTMLInputElement>("poza").addEventListener("change", async (e) => {
-  const f = [...((e.target as HTMLInputElement).files ?? [])].slice(0, 2);
+  const toate = [...((e.target as HTMLInputElement).files ?? [])];
+  const f = toate.slice(0, 2);
   if (!f.length) return;
+  // Read first, and only then the photos on screen let go: a photo that can't be read left closed pictures behind, and
+  // Download did nothing with no word (user test 2026-11-04, L1).
+  let noi: ImageBitmap[];
+  try {
+    noi = await Promise.all(f.map((x) => createImageBitmap(x, { imageOrientation: "from-image" })));
+  } catch {
+    $("fisier-rau").hidden = false;
+    return;
+  }
+  $("fisier-rau").hidden = true;
+  // A third photo is said to be left out, not dropped without a word: the copy has a front and a back (L13).
+  $("doua").hidden = toate.length <= 2;
   for (const b of imagini) b.close();
-  imagini = await Promise.all(f.map((x) => createImageBitmap(x, { imageOrientation: "from-image" })));
+  imagini = noi;
   manual = imagini.map(() => []);
   $("pagini").innerHTML = imagini.map((_, i) => `<canvas id="p-${i}" class="previzualizare" aria-label="${tt("copie.previzualizare")}"></canvas>`).join("");
   $("lucru").hidden = false;

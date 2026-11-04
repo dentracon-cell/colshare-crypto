@@ -166,13 +166,19 @@ function atentie(): string {
 
 /** Slots filled at the last drawing: one just filled gets its tick with a small pop, once. */
 let umplute = new Set<number>();
+/**
+ * The papers asked that already went on this visit: after "Send more" their slots say so and count as done, where the
+ * form came back as new, "0 of 3 added", inviting the same papers again (user test 2026-11-04, L9).
+ */
+const trimiseDeja = new Set<number>();
 
 function slotHtml(s: { nume: string; piese: Piesa[] }, i: number): string {
   const n = s.piese.length;
+  const dus = !n && trimiseDeja.has(i);
   const pagini = s.piese.reduce((x, p) => x + (p.tip === "jpeg" ? 1 : 0), 0);
   // A page can have part of it hidden (./editor-negru.ts); a PDF is first turned into pages for that.
   const piese = s.piese.map((p, j) => `<span class="piesa">${p.url ? `<img src="${p.url}" alt="">` : `<span class="piesa-pdf">${ico("fisier")}<em>PDF</em></span>`}
-    ${p.tip === "jpeg" ? `<button class="piesa-ascund" data-ascund="${i}:${j}" aria-label="${tt("a.ascund")}">${ico("ascund")}${p.ascunse ? p.ascunse : ""}</button>` : ""}
+    ${p.tip === "jpeg" ? `<button class="piesa-ascund" data-ascund="${i}:${j}" aria-label="${tt("a.ascund")}"><span>${ico("ascund")}${p.ascunse ? p.ascunse : ""}</span></button>` : ""}
     <button class="piesa-x" data-scot="${i}:${j}" aria-label="${tt("a.sterg")}">${ico("x")}</button></span>`).join("");
   const areaPdf = s.piese.some((p) => p.tip === "pdf");
   const alege = `<input type="file" data-slot="${i}" accept="image/*,application/pdf" multiple hidden>`;
@@ -181,11 +187,11 @@ function slotHtml(s: { nume: string; piese: Piesa[] }, i: number): string {
     ? `<div class="slot-actiuni"><label class="buton-slot" tabindex="0" role="button">${ico("camera")}${tt(n ? "a.alta-poza" : "a.fotografiez")}<input type="file" data-slot="${i}" accept="image/*" capture="environment" hidden></label>
       <label class="buton-slot" tabindex="0" role="button">${ico("fisier")}${tt("a.aleg")}${alege}</label></div>`
     : `<label class="cadere${n ? " mica" : ""}" tabindex="0" role="button">${ico("urc")}<span>${tt("a.trage")} <u>${tt("a.trage.alege")}</u></span>${n ? "" : `<small>${tt("a.trage.tipuri")}</small>`}${alege}</label>`;
-  return `<li class="slot${n ? " plin" : ""}${n && !umplute.has(i) ? " nou" : ""}" data-loc="${i}">
-    <div class="slot-cap"><span class="slot-bifa">${n ? ico("ok") : i + 1}</span>
-      <span class="slot-nume"><b>${esc(mare(s.nume))}</b>${n ? `<small>${pagini && firma ? tt(pagini === 1 ? "a.pagina" : "a.pagini", { n: pagini }) : tt(n === 1 ? "a.fisier" : "a.fisiere", { n })}</small>` : ""}</span></div>
+  return `<li class="slot${n || dus ? " plin" : ""}${n && !umplute.has(i) ? " nou" : ""}" data-loc="${i}">
+    <div class="slot-cap"><span class="slot-bifa">${n || dus ? ico("ok") : i + 1}</span>
+      <span class="slot-nume"><b>${esc(mare(s.nume))}</b>${n ? `<small>${pagini && firma ? tt(pagini === 1 ? "a.pagina" : "a.pagini", { n: pagini }) : tt(n === 1 ? "a.fisier" : "a.fisiere", { n })}</small>` : dus ? `<small>${tt("a.slot.trimis")}</small>` : ""}</span></div>
     ${n ? `<div class="piese">${piese}</div>` : ""}
-    ${n && !areaPdf ? `<p class="mic sfat-ascund">${tt("a.ascund.sfat")}</p>` : ""}
+    ${n && !areaPdf ? `<p class="mic sfat-ascund">${tt(TELEFON ? "a.ascund.sfat" : "a.ascund.sfat.mouse")}</p>` : ""}
     ${areaPdf ? `<button class="buton-pagini" data-pagini="${i}">${ico("ascund")}${tt("a.pdf.pagini")}</button>` : ""}
     ${actiuni}
   </li>`;
@@ -195,11 +201,15 @@ function slotHtml(s: { nume: string; piese: Piesa[] }, i: number): string {
 async function adaugInSlot(i: number, fisiere: Iterable<File>): Promise<void> {
   const s = sloturi[i];
   if (!s || ocupat) return;
+  // A file that is not a picture or a PDF, or a photo that can't be read, is said, not dropped without a word (user
+  // test 2026-11-04, L7).
+  let refuzate = 0;
   for (const f of fisiere) {
     const p = await piesaDin(f).catch(() => undefined);
     if (p) s.piese.push(p);
+    else refuzate++;
   }
-  formular();
+  formular(refuzate ? t("scan.fisier") : undefined);
 }
 
 function formular(mesaj?: string) {
@@ -216,7 +226,7 @@ function formular(mesaj?: string) {
   const total = numarActe();
   // A checked firm is named in the tab too, as on the page.
   if (firma) document.title = `${t("a.titlu.firma", { firma: firma.firma })} · ${aplicatie.nume}`;
-  const gata = sloturi.slice(0, ce.length || 1).filter((s) => s.piese.length).length;
+  const gata = sloturi.slice(0, ce.length || 1).filter((s, i) => s.piese.length || trimiseDeja.has(i)).length;
   // The name and the list come from whoever made the link: a person's said as theirs, with a warning above the upload
   // (anyone can make a link that names a bank; security audit 2026-10-20). A firm's is checked.
   // A letter on the left (who asks, what for, the safety note, the phone's QR on a computer), the papers on the right;
@@ -234,7 +244,7 @@ function formular(mesaj?: string) {
     ${titlu && ce.length ? `<p class="cerere-pentru">${tt("a.pentru", { titlu: mare(titlu) })}</p>` : ""}
     ${adresa.text.nota ? `<figure class="cerere-nota"><figcaption>${firma ? tt("a.nota.firma", { firma: firma.firma }) : tt("a.nota")}</figcaption><p>${esc(adresa.text.nota)}</p></figure>` : ""}
     <p class="cerere-sub">${firma ? tt("a.sub.firma") : tt("a.sub")}</p>
-    ${firma && cheieLink ? `<div id="recipise-firmei"></div>` : ""}
+    ${firma && cheieLink && !TELEFON ? `<div id="recipise-firmei"></div>` : ""}
     ${trusaCerere ? `<details class="card card-trusa"><summary>${tt("trusa.urmeaza", { nume: trusaCerere.scurt[limbaTrusa(limbaCurenta())] })}</summary>${htmlTrusa(trusaCerere, 3)}</details>` : ""}
     ${atentie()}
     ${laTelefon()}
@@ -249,6 +259,7 @@ function formular(mesaj?: string) {
     ${mesaj ? `<p class="banda rau">${esc(mesaj)}</p>` : ""}
     <button class="buton-sigiliu" id="trimit"${total ? "" : " disabled"}>${ico("lacat")}<span>${total ? tt(total === 1 ? "a.trimit.unu" : "a.trimit.n", { n: total }) : tt("a.trimit")}</span>${ico("sageata")}</button>
     <p class="criptat">${ico("lacat")}${firma ? tt("a.criptat.firma", { firma: firma.firma }) : tt("a.criptat")}</p>
+    ${firma && cheieLink && TELEFON ? `<div id="recipise-firmei"></div>` : ""}
     </div>
   </div>${invit}`;
   umplute = new Set(sloturi.map((s, i) => (s.piese.length ? i : -1)).filter((i) => i >= 0));
@@ -420,7 +431,8 @@ async function trimit() {
     // The papers' digest, as the firm's receipt will carry it: the receipt of these papers is found by it.
     const h = firma && cheieLink ? await rezumatActe(fisiere.map((x) => x.date)).catch(() => "") : "";
     // What was asked and not sent: said once, so "Send more" has a reason.
-    const lipsa = adresa.text.ce.map((x, i) => ({ nume: mare(numeCerut(x)), i })).filter(({ i }) => !sloturi[i]?.piese.length);
+    sloturi.slice(0, adresa.text.ce.length || 1).forEach((s, i) => { if (s.piese.length) trimiseDeja.add(i); });
+    const lipsa = adresa.text.ce.map((x, i) => ({ nume: mare(numeCerut(x)), i })).filter(({ i }) => !trimiseDeja.has(i));
     for (const s of sloturi) for (const p of s.piese) if (p.url) URL.revokeObjectURL(p.url);
     sloturi = [];
     altDeschis = false;
@@ -438,7 +450,7 @@ async function trimit() {
       <p class="sigilat-text">${tt(firma ? "a.trimis.firma" : "a.trimis")}</p></section>
       ${h ? `<div id="recipisa-loc"><p class="recipisa-astept"><span class="punct-viu"></span>${tt("a.recipisa.astept", { firma: firma!.firma })}</p></div>` : ""}
       ${lipsa.length ? `<p class="banda lipsa">${lipsaHtml(lipsa)}</p>` : ""}
-      <button class="buton-ton" id="inca">${ico("plus")}${tt("a.inca")}</button></div>${invit}`;
+      <button class="buton-ton" id="inca">${ico("plus")}${tt("a.inca")}</button></div>${invitatie(firma ? "a.invit.dupa.firma" : "a.invit.dupa", { buton: true })}${piciorHtml(true)}`;
     cifruFond(el.querySelector<HTMLCanvasElement>(".sigilat .cifru-trimit")!, { alfa: 0.09 });
     document.getElementById("inca")!.addEventListener("click", () => formular());
     for (const b of el.querySelectorAll<HTMLButtonElement>("[data-lipsa]")) b.addEventListener("click", () => laSlot(Number(b.dataset.lipsa)));
@@ -462,6 +474,12 @@ function candRecipisa(iso: string): string {
 const recipisaHtml = (x: RecipisaGasita) => `<div class="recipisa-firma">${ico("scut")}<span><b>${tt("a.recipisa.gata", { firma: firma?.firma ?? "" })}</b>
     <small>${esc(candRecipisa(x.la))}</small></span><button class="buton-ton" data-recipisa="${esc(x.r)}">${ico("jos")}${tt("a.recipisa.descarc")}</button></div>`;
 
+/**
+ * A receipt's name as a file name: no characters a file system refuses, and no dot at its end, which the desk's short
+ * Romanian month has ("Recipisă 4 nov." saved as "Recipisă 4 nov..pdf", user test 2026-11-04, L18).
+ */
+const numeFisier = (s: string) => s.replace(/[\\/:*?"<>|]+/g, " ").trim().replace(/[.\s]+$/, "") || "Colshare";
+
 /** The receipts' buttons under `loc`: each fetches its PDF, checks and opens it, and saves it on this device. */
 function legRecipisele(loc: HTMLElement, lista: RecipisaGasita[]): void {
   for (const b of loc.querySelectorAll<HTMLButtonElement>("[data-recipisa]")) {
@@ -473,7 +491,7 @@ function legRecipisele(loc: HTMLElement, lista: RecipisaGasita[]): void {
       try {
         const pdf = await iauRecipisa(r, adresa.id, cheieLink, x);
         const url = URL.createObjectURL(new Blob([pdf as BlobPart], { type: "application/pdf" }));
-        const a = Object.assign(document.createElement("a"), { href: url, download: `${x.nume.replace(/[\\/:*?"<>|]+/g, " ").trim() || "Colshare"}.pdf` });
+        const a = Object.assign(document.createElement("a"), { href: url, download: `${numeFisier(x.nume)}.pdf` });
         document.body.append(a);
         a.click();
         a.remove();
@@ -491,7 +509,9 @@ function legRecipisele(loc: HTMLElement, lista: RecipisaGasita[]): void {
 function umpleRecipisele(): void {
   const loc = document.getElementById("recipise-firmei");
   if (!loc || !recipiseCunoscute.length) return;
-  loc.innerHTML = `<div class="recipise-firmei">${recipiseCunoscute.map(recipisaHtml).join("")}</div>`;
+  // Said to be earlier sends, and on a phone put under the papers to send: two receipts above the slots filled the
+  // first screen, and read as the answer to a send not made yet (user test 2026-11-04, L11).
+  loc.innerHTML = `<div class="recipise-firmei"><p class="recipise-titlu">${tt("a.recipise.inainte")}</p>${recipiseCunoscute.map(recipisaHtml).join("")}</div>`;
   legRecipisele(loc, recipiseCunoscute);
 }
 
@@ -512,6 +532,8 @@ async function asteptRecipisa(h: string): Promise<void> {
   for (let i = 0; i < 45; i++) {
     await new Promise((ok) => setTimeout(ok, i ? 4000 : 1500));
     if (!document.getElementById("recipisa-loc")) return;
+    // The same papers sent again find the receipt already made for them, with its own time: a receipt's slot comes from
+    // the papers' digest and the first copy stands (./recipisa-sosire.ts), so there is no newer one to wait for (L11).
     const x = (await recipiseleCererii(r, id, kl).catch(() => [])).find((y) => y.h === h);
     const loc = document.getElementById("recipisa-loc");
     if (!loc) return;
@@ -525,7 +547,9 @@ async function asteptRecipisa(h: string): Promise<void> {
   if (loc) loc.innerHTML = `<p class="recipisa-astept">${tt("a.recipisa.tarziu", { firma: firma.firma })}</p>`;
 }
 
-const inchisa = () => { el.innerHTML = `<div class="pg-cerere"><h1>${tt("a.titlu")}</h1><p class="banda rau">${tt("a.inchisa")}</p></div>${invit}`; };
+// A firm's request (its short link, or a long one with a certificate) is not "the person's": the relay says it is
+// closed before the firm can be read, so the sentence names nobody (user test 2026-11-04, L10).
+const inchisa = () => { el.innerHTML = `<div class="pg-cerere"><h1>${tt("a.titlu")}</h1><p class="banda rau">${tt(DE_LA_FIRMA || firma ? "a.inchisa.firma" : "a.inchisa")}</p></div>${invit}`; };
 
 async function pornesc(): Promise<void> {
   // A firm's short link (./firma.ts): what it asks comes from the relay, decrypted with the key in the fragment, and

@@ -96,7 +96,15 @@ if (!carte) {
     }
     try {
       await navigator.clipboard.writeText(text);
-      b.textContent = t("o.ios-copiat", nume);
+      // The button keeps its label and the confirmation goes under it: as the label it wrapped onto two lines inside
+      // the button, which still looked like one to tap (user test 2026-11-04, L14).
+      let spus = b.parentElement?.querySelector<HTMLElement>(".o-copiat");
+      if (!spus) {
+        spus = Object.assign(document.createElement("p"), { className: "mic o-copiat" });
+        spus.setAttribute("role", "status");
+        b.after(spus);
+      }
+      spus.textContent = t("o.ios-copiat", nume);
     } catch {
       prompt(t("o.ios-cer"), text);
     }

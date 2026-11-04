@@ -14,6 +14,7 @@ import { punLimba, limbaPaginii, t, type Cheie } from "./limba.ts";
 import { cuPlay, invitatie, peAndroid, PLAY } from "./lansare.ts";
 import { imagineSigura } from "./marime-imagine.ts";
 import { desenezPaginile, type PdfJs } from "./pdf-pagini.ts";
+import { dovadaDin } from "./dovada-pdf.ts";
 
 punLimba(limbaPaginii());
 // One night scene above the paper carries the whole opening: the app's entrance lock waiting (a hand or the mouse turns its
@@ -31,6 +32,8 @@ function cuNume(k: Cheie, v: Record<string, string>, camp: string): string {
 const invit = () => `${invitatie("p.invit")}${piciorHtml(true)}`;
 
 const adresa = citesteAdresa(location.href);
+/** This tab opened a link (a flag only, never the key): a reload then says the link was opened. */
+const DESCHIS_AICI = "colshare-link-deschis";
 /**
  * On an Android phone, "Open in Colshare" hands the link to the app before it is opened here (decisions.md 2026-11-01,
  * "Open in Colshare on a received link"): Messenger, Instagram and the like show this page in their own browser even
@@ -87,27 +90,18 @@ function eroare(e: unknown, dinNou?: () => void) {
   lacat = scenaLacat();
   if (cod === "deschis" || cod === "sters" || cod === "scos" || cod === "lipsa") {
     const deschis = cod === "deschis";
+    // Each case its own heading: "deleted" only when the sender deleted it (user test 2026-11-04, L6).
+    const titlu: Cheie = deschis ? "p.deschis.titlu" : cod === "sters" ? "p.sters.titlu" : cod === "scos" ? "p.scos.titlu" : "p.lipsa.titlu";
     inScena(`<span class="sigiliu-scena">${sigiliuSvg(deschis ? "deschis" : "expirat", { px: 132 })}</span>
-      <h1>${tt(deschis ? "p.deschis.titlu" : "p.sters.titlu")}</h1><p class="scena-text">${tt(deschis ? "p.deschis.text" : cod === "sters" ? "p.sters" : cod === "scos" ? "p.scos" : "p.lipsa")}</p>`);
+      <h1>${tt(titlu)}</h1><p class="scena-text">${tt(deschis ? "p.deschis.text" : cod === "sters" ? "p.sters" : cod === "scos" ? "p.scos" : "p.lipsa")}</p>`);
     return;
   }
   const k: Cheie = cod === "cheie" ? "p.cheie"
     : e instanceof EroareRelay && e.status === 0 ? "pg.retea" : cod === "rata" ? "pg.rata" : cod === "oprit" ? "pg.oprit" : "pg.server";
-  inScena(`<span class="sigiliu-scena">${sigiliuSvg("intreg", { px: 132 })}</span><h1>${tt("p.titlu")}</h1><p class="banda rau" role="alert">${tt(k)}</p>
+  // A broken key gets a heading that fits it; a network or server error keeps the page's, as it can be retried (L17).
+  inScena(`<span class="sigiliu-scena">${sigiliuSvg("intreg", { px: 132 })}</span><h1>${tt(k === "p.cheie" ? "p.cheie.titlu" : "p.titlu")}</h1><p class="banda rau" role="alert">${tt(k)}</p>
     ${dinNou && k !== "p.cheie" ? `<button class="buton-sigiliu" id="reincerc">${tt("pg.reincerc")}</button>` : ""}`);
   if (dinNou) document.getElementById("reincerc")?.addEventListener("click", dinNou);
-}
-
-/** The proof a safe copy carries in its PDF (./dovada.ts `CHEIE_PDF`), looked for as bytes: the check itself is /v/'s. */
-const DOVADA = new TextEncoder().encode("/ColshareProof (");
-function cuDovada(f: FisierPachet): boolean {
-  if (f.tip !== "application/pdf") return false;
-  const d = f.date;
-  outer: for (let i = 0; i <= d.length - DOVADA.length; i++) {
-    for (let j = 0; j < DOVADA.length; j++) if (d[i + j] !== DOVADA[j]) continue outer;
-    return true;
-  }
-  return false;
 }
 
 const ICO: Record<string, string> = {
@@ -132,8 +126,11 @@ const marime = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1
  */
 function lista(titlu: string | undefined, fisiere: FisierPachet[], cine = "") {
   const urls = fisiere.map((f) => URL.createObjectURL(new Blob([f.date as BlobPart], { type: f.tip })));
-  // A safe copy says where it can be checked, under its name.
-  const verific = (f: FisierPachet) => (cuDovada(f) ? `<small><a href="/v/" target="_blank" rel="noopener">${tt("p.verific")}</a></small>` : "");
+  // A safe copy says where it can be checked, under its name: /v/ to choose the file, or /v/ already checking its
+  // statement once the file's own check holds below (a statement copied into another PDF showed green, attack round 19,
+  // M1).
+  const verific = (f: FisierPachet, i: number) => (dovadaDin(f) === undefined ? ""
+    : `<small><a href="/v/" data-verific="${i}" target="_blank" rel="noopener">${tt("p.verific")}</a></small>`);
   const fel = (f: FisierPachet) => (f.tip === "application/pdf" ? "PDF" : f.tip === "image/png" ? "PNG" : f.tip === "image/webp" ? "WEBP" : "JPG");
   // A picture shows itself on its tile; a PDF keeps the sheet with its kind. A picture whose header declares a huge size
   // (or says none) is never decoded on the page: no tile and no View, only Save (attack test 2026-10-29, H1).
@@ -154,16 +151,30 @@ function lista(titlu: string | undefined, fisiere: FisierPachet[], cine = "") {
   const unul = fisiere.length === 1;
   arata(`<div class="p-deschis"><h1>${tt("p.titlu")}</h1>${cine}${titlu ? `<p class="nota">${tt("p.de-la", { titlu })}</p>` : ""}
     <p class="p-salveaza" role="note">${ico("ceas")}<span>${tt("p.salveaza")}</span></p>
-    <ul class="hartii${unul ? " unul" : ""}">${fisiere.map((f, i) => `<li style="--i:${i}" data-hartie="${i}"><span class="hartie-nr" aria-hidden="true">${nr(i)}</span>${chip(f, i)}<span class="hartie-text"><b>${esc(f.nume)}</b><span class="hartie-meta">${fel(f)} · ${marime(f.date.length)}</span>${verific(f)}</span>
+    <ul class="hartii${unul ? " unul" : ""}">${fisiere.map((f, i) => `<li style="--i:${i}" data-hartie="${i}"><span class="hartie-nr" aria-hidden="true">${nr(i)}</span>${chip(f, i)}<span class="hartie-text"><b>${esc(f.nume)}</b><span class="hartie-meta">${fel(f)} · ${marime(f.date.length)}</span>${verific(f, i)}</span>
       <span class="hartie-act">${f.tip.startsWith("image/") && !poza(f) ? "" : `<button type="button" class="buton-ton" data-vad="${i}">${ico("ochi")}<span>${tt("p.vad")}</span></button>`}
       <a class="${salvez}" href="${urls[i]}" download="${esc(f.nume)}">${ico("jos")}<span>${tt("p.descarc")}</span></a></span></li>`).join("")}</ul>
-    ${fisiere.length > 1 ? `<button class="buton-sigiliu" id="toate">${ico("jos")}${tt("p.toate")}</button>` : ""}</div>${invit()}`);
+    ${fisiere.length > 1 ? `<button class="buton-sigiliu" id="toate">${ico("jos")}${tt("p.toate")}</button>` : ""}</div>${invitatie("p.invit.dupa", { buton: true })}${piciorHtml(true)}`);
+  // While a paper is not saved, leaving or reloading the page asks first: the link opened once (user test 2026-11-04,
+  // L2). This tab also remembers that it opened a link, without the key, to say so after a reload.
+  const nesalvate = () => !!el.querySelector(".hartii li:not(.salvat)");
+  const pazesc = (e: BeforeUnloadEvent) => { if (nesalvate()) { e.preventDefault(); e.returnValue = ""; } };
+  addEventListener("beforeunload", pazesc);
+  try { sessionStorage.setItem(DESCHIS_AICI, "1"); } catch { /* storage refused: the page says the generic sentence */ }
+  // Each safe copy checked as /v/ would check the file: only one whose pictures and signature hold opens /v/ with its
+  // statement already in.
+  for (const a of el.querySelectorAll<HTMLAnchorElement>("a[data-verific]")) {
+    const f = fisiere[Number(a.dataset.verific)], d = dovadaDin(f);
+    if (!d) continue;
+    void import("./dovada.ts").then(({ verificFisier }) => verificFisier(f.date)).then((r) => { if (r.stare === "bun") a.href = `/v/#${d}`; }).catch(() => undefined);
+  }
   // A paper saved is ticked off on its tile, so a long list shows what is still to save.
   const bifez = (a: HTMLAnchorElement) => {
     const li = a.closest("li");
     if (!li || li.classList.contains("salvat")) return;
     li.classList.add("salvat");
     a.querySelector("svg")!.outerHTML = ico("ok");
+    if (!nesalvate()) removeEventListener("beforeunload", pazesc);
   };
   for (const a of el.querySelectorAll<HTMLAnchorElement>("a[download]")) a.addEventListener("click", () => bifez(a));
   for (const b of el.querySelectorAll<HTMLButtonElement>("[data-vad]")) {
@@ -212,6 +223,10 @@ function vad(f: FisierPachet, url: string, salvat: () => void, inapoi: HTMLEleme
     <div class="p-vad-pagini">${pdf ? `<p class="p-vad-lucrez">${tt("a.pdf.lucrez")}</p>` : `<img src="${url}" alt="${esc(f.nume)}">`}</div>`;
   document.body.append(v);
   document.documentElement.classList.add("p-vad-deschis");
+  // Nothing behind the viewer takes Tab or a screen reader while it is open, as the ask page's editor does (user test
+  // 2026-11-04, L4).
+  const blocate = [...document.body.children].filter((e): e is HTMLElement => e !== v && e instanceof HTMLElement && !e.inert);
+  for (const b of blocate) b.inert = true;
   let deschis = true;
   // The phone's Back closes the viewer, not the page (the link is already used): the viewer is a step in the history
   // (attack test 2026-11-01, round 8, L8-3).
@@ -227,6 +242,7 @@ function vad(f: FisierPachet, url: string, salvat: () => void, inapoi: HTMLEleme
     for (const c of v.querySelectorAll("canvas")) c.width = c.height = 0;
     for (const u of urluri) URL.revokeObjectURL(u);
     v.remove();
+    for (const b of blocate) b.inert = false;
     document.documentElement.classList.remove("p-vad-deschis");
     document.removeEventListener("keydown", tasta);
     removeEventListener("popstate", laInapoi);
@@ -281,12 +297,24 @@ function potrivescTitlul(h: HTMLElement | null) {
 }
 
 if (!adresa || adresa.fel !== "link") {
-  inScena(`<span class="sigiliu-scena">${sigiliuSvg("expirat", { px: 132 })}</span><h1>${tt("p.titlu")}</h1><p class="scena-text">${tt("p.fara-link")}</p>`);
+  // Reloaded after this tab opened the link (the key left the address bar): it says the link was opened, not to open it
+  // again (user test 2026-11-04, L2).
+  let deschisAici = false;
+  try { deschisAici = sessionStorage.getItem(DESCHIS_AICI) === "1"; } catch { /* no storage */ }
+  // Only this page loaded again (a reload, Back or Forward): another link cut short in the same tab is not the one
+  // opened (attack round 19, L1).
+  const nav = (performance.getEntriesByType?.("navigation")[0] as PerformanceNavigationTiming | undefined)?.type;
+  deschisAici &&= nav === "reload" || nav === "back_forward";
+  inScena(deschisAici
+    ? `<span class="sigiliu-scena">${sigiliuSvg("expirat", { px: 132 })}</span><h1>${tt("p.deschis.titlu")}</h1><p class="scena-text">${tt("p.deschis.text")}</p>`
+    : `<span class="sigiliu-scena">${sigiliuSvg("expirat", { px: 132 })}</span><h1>${tt("p.cheie.titlu")}</h1><p class="scena-text">${tt("p.fara-link")}</p>`);
 } else {
   // Who sends and the note travel in the fragment with the key: shown before anything is fetched.
   const { de, nota } = adresa.fata;
-  // Who sent it stays on the page once the papers are listed (UX audit 2026-10-21).
+  // Who sent it stays on the page once the papers are listed (UX audit 2026-10-21), and so does the note the front
+  // showed: a firm's send carries its own title in the package, which took the note's place (user test 2026-11-04, L3).
   let cine = "";
+  let notaFata: string | undefined;
   const deschid = async () => {
     // The lock dials as the papers come down through the ciphertext field, a notch a sixth, then springs open: the bolt
     // gives, the seal parts along the slit and the list comes up. A retry gets a fresh lock (eroare makes one).
@@ -306,7 +334,7 @@ if (!adresa || adresa.fel !== "link") {
       }).then(despacheteaza), new Promise((ok) => setTimeout(ok, faraMiscare() ? 0 : 600))]);
       lacat.tasta(6);
       await lacat.deschide();
-      lista(pachet.titlu, pachet.fisiere, cine);
+      lista(notaFata || pachet.titlu, pachet.fisiere, cine);
     } catch (e) {
       eroare(e, () => void deschid());
     }
@@ -317,11 +345,12 @@ if (!adresa || adresa.fel !== "link") {
     // A firm's card shows only the firm's own signed note; a note with no name is not shown, since nothing would say
     // whose words they are (security audit 2026-10-25, L2).
     const n = firma ? firma.nota : de ? nota : undefined;
+    notaFata = n;
     cine = firma ? `<p class="spus verificat">${cuNume("p.firma", { firma: firma.firma.firma, cui: firma.firma.cui }, "firma")}</p>` : de ? `<p class="spus">${cuNume("p.de", { nume: de }, "nume")}</p>` : "";
     // The lock in the middle of the night scene, its tape running, until the tap that opens it.
     inScena(`<div class="loc-lacat"></div>${cine}<h1>${tt("p.titlu")}</h1>${n ? `<p class="nota">${tt("p.de-la", { titlu: n })}</p>` : ""}
       <p class="scena-text">${tt("p.text")}</p><button class="buton-sigiliu" id="deschid">${ico("lacat")}${tt("p.deschid")}${ico("sageata")}</button>
-      ${inAplicatie ? `<a class="buton-contur in-aplicatie" href="${esc(inAplicatie)}">${tt("o.deschid")}</a>` : ""}`);
+      ${inAplicatie ? `<a class="buton-contur in-aplicatie" href="${esc(inAplicatie)}">${tt("o.deschid")}</a>${cuPlay() ? `<p class="in-aplicatie-nota">${tt("p.app.nota")}</p>` : ""}` : ""}`);
     // Only a tap opens it: a link preview that runs the page must not use up the one opening.
     document.getElementById("deschid")!.addEventListener("click", deschid);
   };

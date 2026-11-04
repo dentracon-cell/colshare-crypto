@@ -63,6 +63,16 @@ describe("copia sigură", () => {
     }
   });
 
+  it("puts the photo's box right above the <<< lines on a passport photographed with its facing page (2026-11-04, P2)", () => {
+    // The sample passport: 1640 × 2280, the facing page above, the data page below, its <<< lines found at 88 %.
+    const z = zonaPoza(1640, 2280, { x: 0, y: 0.879, w: 1, h: 0.096 });
+    expect(z.y).toBeGreaterThan(0.45);
+    expect(z.y + z.h).toBeCloseTo(0.879, 3);
+    expect(z.x + z.w).toBeLessThan(0.31);
+    // A single data page: the box still reaches the photo's top, high on the page.
+    expect(zonaPoza(1500, 1056, { x: 0, y: 0.833, w: 1, h: 0.165 }).y).toBeLessThan(0.13);
+  });
+
   it("puts front and back on one A4 sheet, each whole, one under the other", () => {
     const c = createCanvas(A4.w, A4.h);
     const fata = sursa(856, 540), spate = sursa(856, 540);

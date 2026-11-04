@@ -103,7 +103,8 @@ function campuri(): CampuriFormular | undefined {
     c.motiv = v("motiv").trim();
     if (!c.motiv) lipsa("motiv");
     c.bunaCredinta = (form.elements.namedItem("bunaCredinta") as HTMLInputElement).checked;
-    if (!c.bunaCredinta) lipsa("bunaCredinta");
+    // A checkbox is ticked, not filled in (user test 2026-11-04, L20).
+    if (!c.bunaCredinta) lipsa("bunaCredinta", "f.bifa");
   }
   return bun ? c : undefined;
 }

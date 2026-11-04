@@ -23,11 +23,12 @@ export function peAndroid(ua = globalThis.navigator?.userAgent ?? ""): boolean {
 
 /**
  * The invitation line: its sentence with the app's name linked to the home page; once the app is live and on Android,
- * "Get Colshare on Google Play" under it. `live` and `android` only for the tests.
+ * "Get Colshare on Google Play" under it. `buton`: the download as an outline button, after a task is done (2026-11-04).
+ * `live` and `android` only for the tests.
  */
-export function invitatie(cheie: Cheie, o: { live?: boolean; android?: boolean } = {}): string {
+export function invitatie(cheie: Cheie, o: { live?: boolean; android?: boolean; buton?: boolean } = {}): string {
   const play = cuPlay(o)
-    ? `<a class="invit-play" href="${PLAY}" target="_blank" rel="noopener">${esc(t("invit.play", { app: aplicatie.nume }))}</a>` : "";
+    ? `<a class="invit-play${o.buton ? " buton-contur" : ""}" href="${PLAY}" target="_blank" rel="noopener">${esc(t("invit.play", { app: aplicatie.nume }))}</a>` : "";
   return `<p class="invit">${frazaInvitatie(cheie)}${play}</p>`;
 }
 
