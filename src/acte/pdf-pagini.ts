@@ -44,11 +44,16 @@ const MAX_PIXELI_IMAGINE = 50_000_000;
 /** Letters and digits a page needs for its text layer to stand for it. */
 const MIN_TEXT = 30;
 
-export async function randeazaPdf<C extends PanzaPdf>(pdfjs: PdfJs, date: Uint8Array, panza: (w: number, h: number) => C, o: { dpi?: number; standardFontDataUrl?: string; maxPagini?: number } = {}): Promise<PaginaRandata<C>[]> {
+/**
+ * With `toate`, a PDF of more than `maxPagini` pages is refused (an error with `cod` "prea-multe") rather than cut short:
+ * the desk's copies, where a copy missing its last pages looked complete (attack test 2026-10-31, N6).
+ */
+export async function randeazaPdf<C extends PanzaPdf>(pdfjs: PdfJs, date: Uint8Array, panza: (w: number, h: number) => C, o: { dpi?: number; standardFontDataUrl?: string; maxPagini?: number; toate?: boolean } = {}): Promise<PaginaRandata<C>[]> {
   const sarcina = pdfjs.getDocument({ data: date.slice(), isEvalSupported: false, useSystemFonts: true, maxImageSize: MAX_PIXELI_IMAGINE, ...(o.standardFontDataUrl ? { standardFontDataUrl: o.standardFontDataUrl } : {}) });
   const doc = await sarcina.promise;
   const out: PaginaRandata<C>[] = [];
   try {
+    if (o.toate && doc.numPages > (o.maxPagini ?? 30)) throw Object.assign(new Error("too many pages"), { cod: "prea-multe" });
     for (let n = 1; n <= Math.min(doc.numPages, o.maxPagini ?? 30); n++) {
       const pag = await doc.getPage(n);
       const v1 = pag.getViewport({ scale: 1 });

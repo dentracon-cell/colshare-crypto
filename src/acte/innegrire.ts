@@ -464,7 +464,10 @@ function gasesteInRand(r: Rand, v: Valoare): [number, number][] {
   ch.forEach((c, i) => {
     if (!ALNUM.test(c)) return;
     const ult = cuvinte[cuvinte.length - 1];
-    if (ult && ult.la === i && !r.chars[i].s) { ult.t += c; ult.la = i + 1; } else cuvinte.push({ t: c, de: i, la: i + 1 });
+    // A new text item touching the last letter continues its word: a PDF writes a word in pieces when its font
+    // changes inside it (a diacritic from a fallback font), and "Exemp" + "lescu" is one word (attack round 20, N1).
+    const lipit = i > 0 && r.chars[i].b.x0 - r.chars[i - 1].b.x1 < rh * 0.12;
+    if (ult && ult.la === i && (!r.chars[i].s || lipit)) { ult.t += c; ult.la = i + 1; } else cuvinte.push({ t: c, de: i, la: i + 1 });
   });
   const cautate = pliaza(v.text).split(/[^A-Z0-9]+/).filter((x) => x.length >= 2);
   if (!cautate.length) return out;
